@@ -1,4 +1,6 @@
-﻿using System;
+﻿using Pdfium.Net.Native.Pdfium;
+using Pdfium.Net.Native.Structs;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -17,6 +19,7 @@ namespace PdfiumViewer
         private Rectangle _displayRect;
         private readonly ScrollProperties _verticalScroll;
         private readonly ScrollProperties _horizontalScroll;
+
 
         public event ScrollEventHandler Scroll;
 
@@ -94,7 +97,8 @@ namespace PdfiumViewer
 
         public CustomScrollControl()
         {
-            SetStyle(ControlStyles.ContainerControl, true);
+            SetStyle(ControlStyles.Selectable, true);
+            SetStyle(ControlStyles.UserMouse, true);
             SetStyle(ControlStyles.AllPaintingInWmPaint, false);
 
             _horizontalScroll = new ScrollProperties(this, NativeMethods.SB_HORZ);
@@ -273,10 +277,10 @@ namespace PdfiumViewer
             if ((xDelta != 0 || yDelta != 0) && IsHandleCreated && preserveContents)
             {
                 var cr = ClientRectangle;
-                var rcClip = new NativeMethods.RECT(cr);
-                var rcUpdate = new NativeMethods.RECT(cr);
+                var rcClip = new RECT(cr);
+                var rcUpdate = new RECT(cr);
 
-                NativeMethods.ScrollWindowEx(
+                Win32.ScrollWindowEx(
                     new HandleRef(this, Handle), xDelta, yDelta,
                     IntPtr.Zero,
                     ref rcClip,
@@ -291,12 +295,12 @@ namespace PdfiumViewer
 
         private int ScrollThumbPosition(int fnBar)
         {
-            var si = new NativeMethods.SCROLLINFO
+            var si = new SCROLLINFO
             {
                 fMask = NativeMethods.SIF_TRACKPOS
             };
 
-            NativeMethods.GetScrollInfo(new HandleRef(this, Handle), fnBar, si);
+            Win32.GetScrollInfo(new HandleRef(this, Handle), fnBar, si);
 
             return si.nTrackPos;
         }
@@ -428,7 +432,7 @@ namespace PdfiumViewer
             int pos = -_displayRect.X;
             int oldValue = pos;
 
-            switch (NativeMethods.Util.LOWORD(m.WParam))
+            switch (Util.LOWORD(m.WParam))
             {
                 case NativeMethods.SB_THUMBPOSITION:
                 case NativeMethods.SB_THUMBTRACK:
@@ -478,7 +482,7 @@ namespace PdfiumViewer
             int pos = -_displayRect.Y;
             int oldValue = pos;
 
-            switch (NativeMethods.Util.LOWORD(m.WParam))
+            switch (Util.LOWORD(m.WParam))
             {
                 case NativeMethods.SB_THUMBPOSITION:
                 case NativeMethods.SB_THUMBTRACK:
@@ -617,7 +621,7 @@ namespace PdfiumViewer
 
         private void WmOnScroll(ref System.Windows.Forms.Message m, int oldValue, int value, ScrollOrientation scrollOrientation)
         {
-            var type = (ScrollEventType)NativeMethods.Util.LOWORD(m.WParam);
+            var type = (ScrollEventType)Util.LOWORD(m.WParam);
 
             if (type != ScrollEventType.EndScroll)
                 OnScroll(new ScrollEventArgs(type, oldValue, value, scrollOrientation));
@@ -736,9 +740,9 @@ namespace PdfiumViewer
                 if (!_parentControl.IsHandleCreated || !Visible)
                     return;
 
-                var si = new NativeMethods.SCROLLINFO
+                var si = new SCROLLINFO
                 {
-                    cbSize = Marshal.SizeOf(typeof(NativeMethods.SCROLLINFO)),
+                    cbSize = Marshal.SizeOf(typeof(SCROLLINFO)),
                     fMask = NativeMethods.SIF_ALL,
                     nMin = 0,
                     nMax = Maximum,
@@ -747,7 +751,7 @@ namespace PdfiumViewer
                     nTrackPos = 0
                 };
 
-                NativeMethods.SetScrollInfo(new HandleRef(_parentControl, _parentControl.Handle), _orientation, si, true);
+                Win32.SetScrollInfo(new HandleRef(_parentControl, _parentControl.Handle), _orientation, si, true);
             }
         }
     }

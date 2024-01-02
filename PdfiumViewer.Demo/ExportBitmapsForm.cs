@@ -50,5 +50,10 @@ namespace PdfiumViewer.Demo
                 int.TryParse(_dpiXTextBox.Text, out _dpiX) &&
                 int.TryParse(_dpiYTextBox.Text, out _dpiY);
         }
+
+        private void _cancelButton_Click(object sender, EventArgs e)
+        {
+
+        }
     }
 }

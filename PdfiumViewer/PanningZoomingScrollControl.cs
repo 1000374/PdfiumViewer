@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Pdfium.Net.Native.Pdfium;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
@@ -9,12 +10,12 @@ using System.Windows.Forms;
 
 namespace PdfiumViewer
 {
-    public abstract class PanningZoomingScrollControl : CustomScrollControl
+    public  class PanningZoomingScrollControl : CustomScrollControl
     {
         public const double DefaultZoomMin = 0.1;
         public const double DefaultZoomMax = 5;
         public const double DefaultZoomFactor = 1.2;
-
+        //private bool _isMatch = false;
         private static readonly Cursor PanCursor;
 
         static PanningZoomingScrollControl()
@@ -35,7 +36,23 @@ namespace PdfiumViewer
         private double _zoomMin;
 
         public event EventHandler ZoomChanged;
+        /// <summary>
+        /// If true, cursor will be a hand and the mouse can be used to pan
+        /// within the document.  If false, cursor will be an arrow and
+        /// mouse operations can be defined by consumers of the control.
+        /// </summary>
+        [DefaultValue(true)]
+        public bool PanningEnabled = true;
 
+        private bool ShouldPan
+        {
+            get { return _canPan && PanningEnabled; }
+        }
+
+        ///// <summary>
+        ///// Gets or sets Cursor
+        ///// </summary>
+        //public bool IsMatch { get { return _isMatch; } set { _isMatch = value; } }
         protected virtual void OnZoomChanged(EventArgs e)
         {
             var ev = ZoomChanged;
@@ -120,6 +137,8 @@ namespace PdfiumViewer
         [DefaultValue(MouseWheelMode.PanAndZoom)]
         public MouseWheelMode MouseWheelMode { get; set; }
 
+        protected bool MousePanningEnabled { get; set; } = true;
+
         /// <summary>
         /// Raises the <see cref="E:System.Windows.Forms.Control.MouseWheel"/> event.
         /// </summary>
@@ -162,7 +181,10 @@ namespace PdfiumViewer
             }
         }
 
-        protected abstract Rectangle GetDocumentBounds();
+        protected virtual Rectangle GetDocumentBounds()
+        {
+            return Rectangle.Empty;
+        }
 
         /// <summary>
         /// Determines whether the specified key is a regular input key or a special key that requires preprocessing.
@@ -226,7 +248,7 @@ namespace PdfiumViewer
 
         protected override void OnSetCursor(SetCursorEventArgs e)
         {
-            if (_canPan && e.HitTest == HitTest.Client)
+            if (MousePanningEnabled && ShouldPan && e.HitTest == HitTest.Client)
                 e.Cursor = PanCursor;
 
             base.OnSetCursor(e);
@@ -243,7 +265,7 @@ namespace PdfiumViewer
         {
             base.OnMouseDown(e);
 
-            if (e.Button != MouseButtons.Left || !_canPan)
+            if (!MousePanningEnabled || e.Button != MouseButtons.Left || !ShouldPan)
                 return;
 
             Capture = true;
@@ -255,7 +277,7 @@ namespace PdfiumViewer
         {
             base.OnMouseMove(e);
 
-            if (!Capture)
+            if (!MousePanningEnabled || !ShouldPan || !Capture)
                 return;
 
             var offset = new Point(e.Location.X - _dragStart.X, e.Location.Y - _dragStart.Y);
@@ -267,7 +289,8 @@ namespace PdfiumViewer
         {
             base.OnMouseUp(e);
 
-            Capture = false;
+            if (MousePanningEnabled)
+                Capture = false;
         }
 
         private class WheelFilter : IMessageFilter
@@ -277,7 +300,7 @@ namespace PdfiumViewer
                 if (m.Msg != NativeMethods.WM_MOUSEWHEEL)
                     return false;
 
-                var control = Control.FromHandle(NativeMethods.WindowFromPoint(Cursor.Position));
+                var control = Control.FromHandle(Win32.WindowFromPoint(Cursor.Position));
 
                 while (control != null && !(control is PanningZoomingScrollControl))
                 {
@@ -287,7 +310,7 @@ namespace PdfiumViewer
                 if (control == null)
                     return false;
 
-                NativeMethods.SendMessage(control.Handle, m.Msg, m.WParam, m.LParam);
+                Win32.SendMessage(control.Handle, m.Msg, m.WParam, m.LParam);
                 return true;
             }
         }

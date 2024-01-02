@@ -1,9 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Pdfium.Net;
 using System.ComponentModel;
-using System.Drawing;
-using System.Text;
-using System.Windows.Forms;
 
 #pragma warning disable 1591
 

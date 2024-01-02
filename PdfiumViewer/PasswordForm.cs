@@ -8,7 +8,7 @@ using System.Windows.Forms;
 
 namespace PdfiumViewer
 {
-    internal partial class PasswordForm : Form
+    public partial class PasswordForm : Form
     {
         public string Password
         {

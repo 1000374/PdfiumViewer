@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Pdfium.Net;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
@@ -47,7 +48,7 @@ namespace PdfiumViewer.Demo
                     new PdfPrintMultiplePages(
                         horizontal,
                         vertical,
-                        _horizontalOrientation.Checked ? Orientation.Horizontal : Orientation.Vertical,
+                        _horizontalOrientation.Checked ? PdfPrintSettings.Orientation.Horizontal : PdfPrintSettings.Orientation.Vertical,
                         margin
                     )
                 );

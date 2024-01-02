@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using Pdfium.Net.Native.Pdfium.Enums;
 
 namespace PdfiumViewer
 {
@@ -126,7 +127,7 @@ namespace PdfiumViewer
             resources.ApplyResources(this._renderer, "_renderer");
             this._renderer.Name = "_renderer";
             this._renderer.Page = 0;
-            this._renderer.Rotation = PdfiumViewer.PdfRotation.Rotate0;
+            this._renderer.Rotation = PdfRotation.Rotate0;
             this._renderer.ZoomMode = PdfiumViewer.PdfViewerZoomMode.FitHeight;
             this._renderer.LinkClick += new PdfiumViewer.LinkClickEventHandler(this._renderer_LinkClick);
             // 

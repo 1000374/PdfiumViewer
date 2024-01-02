@@ -1,9 +1,14 @@
-﻿using System;
+﻿using Pdfium.Net;
+using Pdfium.Net.Native.Enums;
+using Pdfium.Net.Native.Pdfium.Enums;
+using Pdfium.Net.Native.Pdfium.Structs;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Printing;
 using System.IO;
 using System.Text;
+using static System.Net.WebRequestMethods;
 
 namespace PdfiumViewer.Demo
 {
@@ -93,6 +98,8 @@ namespace PdfiumViewer.Demo
                 return _sizes;
             }
         }
+
+        public SignatureData Signature => _document.Signature;
 
         private IList<SizeF> TranslateSizes(IList<SizeF> pageSizes)
         {
@@ -218,10 +225,10 @@ namespace PdfiumViewer.Demo
 
             foreach (var link in pageLinks.Links)
             {
-                links.Add(new PdfPageLink(
+                links.Add(new PdfPageLink(link.Subtypes,
                     link.Bounds,
                     link.TargetPage + _startPage,
-                    link.Uri
+                    link.Uri, link.LightAnnot
                 ));
             }
 
@@ -232,12 +239,14 @@ namespace PdfiumViewer.Demo
         {
             _document.DeletePage(TranslatePage(pageNumber));
         }
-
+        public PdfRotation GetRotation(int page)
+        {
+            return _document.GetRotation(page);
+        }
         public void RotatePage(int pageNumber, PdfRotation rotation)
         {
             _document.RotatePage(TranslatePage(pageNumber), rotation);
         }
-
         public PdfInformation GetInformation()
         {
             return _document.GetInformation();
@@ -252,7 +261,10 @@ namespace PdfiumViewer.Demo
         {
             return _document.GetPdfText(textSpan);
         }
-
+        public string GetBoundedText(int page, int left, int top, int right, int bottom, int renderWidth, int renderHeight)
+        {
+            return _document.GetBoundedText(page, left, top, right, bottom, renderWidth, renderHeight);
+        }
         public IList<PdfRectangle> GetTextBounds(PdfTextSpan textSpan)
         {
             var result = new List<PdfRectangle>();
@@ -288,6 +300,30 @@ namespace PdfiumViewer.Demo
             return _document.RectangleFromPdf(TranslatePage(page), rect);
         }
 
+        public int GetCharacterIndexAtPosition(PdfPoint location, double xTolerance, double yTolerance)
+        {
+            return _document.GetCharacterIndexAtPosition(location, xTolerance, yTolerance);
+        }
+
+        public bool GetWordAtPosition(PdfPoint location, double xTolerance, double yTolerance, out PdfTextSpan span)
+        {
+            return _document.GetWordAtPosition(location, xTolerance, yTolerance, out span);
+        }
+
+        public int CountCharacters(int page)
+        {
+            return _document.CountCharacters(page);
+        }
+
+        public List<PdfRectangle> GetTextRectangles(int page, int startIndex, int count)
+        {
+            return _document.GetTextRectangles(page, startIndex, count);
+        }
+        public IList<PdfCharacterInformation> GetCharacterInformation(int page)
+        {
+            return _document.GetCharacterInformation(page);
+        }
+
         private int TranslatePage(int page)
         {
             if (page < 0 || page >= PageCount)
@@ -298,6 +334,74 @@ namespace PdfiumViewer.Demo
         public void Dispose()
         {
             _document.Dispose();
+        }
+
+        public int GetCharIndexAtPos(int pageNumber, double x, double y, double tol = 12)
+        {
+            return _document.GetCharIndexAtPos(pageNumber, x, y, tol);
+        }
+
+        public PdfRectangle[] GetTextBounds(int pageNumber, int startIndex, int length)
+        {
+            return _document.GetTextBounds(pageNumber, startIndex, length);
+        }
+
+        public string GetBoundedText(int page, int x1, int y1, int x2, int y2)
+        {
+            return _document.GetBoundedText(page, x1, y1, x2, y2);
+        }
+
+        public Image Render(int page, int width, int height)
+        {
+            return _document.Render(page, width, height);
+        }
+
+        public Image Render(int page, int width, int height, PdfRotation rotate, PdfRenderFlags flags)
+        {
+            return _document.Render(page, width, height, rotate, flags);
+        }
+
+        public Image Render(int page, int width, int height, int clipX, int clipY, int clipWidth, int clipHeight, PdfRotation rotate, PdfRenderFlags flags)
+        {
+            return _document.Render(page, width, height, clipX, clipY, clipWidth, clipHeight, rotate, flags);
+        }
+
+        public Image Render(int page, int width, int height, int clipX, int clipY, int clipWidth, int clipHeight, float dpiX, float dpiY, PdfRotation rotate, PdfRenderFlags flags)
+        {
+            return _document.Render(page, width, height, clipX, clipY, clipWidth, clipHeight, dpiX, dpiY, rotate, flags);
+        }
+
+        public FS_RECTF GetPageMediaBox(int pageNumber)
+        {
+            return _document.GetPageMediaBox(pageNumber);
+        }
+
+        public void SetPageMediaBox(int pageNumber, float left, float right, float top, float bottom)
+        {
+            _document.SetPageMediaBox(pageNumber, left, right, top, bottom);
+        }
+
+        public bool GetPdfEditable(int page)
+        {
+            return true;
+        }
+
+        public Image RenderThumbnail(int page)
+        {
+            return _document.RenderThumbnail(page);
+        }
+
+        /// <summary>
+        /// Create a new document from |src_doc|.  The pages of |src_doc| will be combined to provide |num_pages_on_x_axis x num_pages_on_y_axis| pages per |output_doc| page.
+        /// </summary>
+        /// <param name="output_width">The output page width in PDF &quot;user space&quot; units.</param>
+        /// <param name="output_height">The output page height in PDF &quot;user space&quot; units.</param>
+        /// <param name="num_pages_on_x_axis">The number of pages on X Axis.</param>
+        /// <param name="num_pages_on_y_axis">The number of pages on Y Axis.</param>
+        /// <returns>PdfDocument</returns>
+        public PdfDocument ImportNPagesToOne(float output_width, float output_height, uint num_pages_on_x_axis = 2, uint num_pages_on_y_axis = 1)
+        {
+            return _document.ImportNPagesToOne(output_width, output_height, num_pages_on_x_axis, num_pages_on_y_axis);
         }
     }
 }

@@ -1,9 +1,13 @@
-﻿using System;
+﻿using Pdfium.Net;
+using Pdfium.Net.Native.Pdfium.Enums;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.Text;
 using System.Windows.Forms;
+using static System.Net.Mime.MediaTypeNames;
 
 namespace PdfiumViewer
 {
@@ -12,9 +16,18 @@ namespace PdfiumViewer
     /// </summary>
     public class PdfRenderer : PanningZoomingScrollControl
     {
-        private static readonly Padding PageMargin = new Padding(4);
+        public delegate void DeleBoundedText(int page, int x, int y, int x1, int y1, string txt, bool isEdit);
+        public event DeleBoundedText BoundedTextHandler;
 
-        private int _height;
+        public delegate void DelePdfPoint(PdfPoint point);
+        public event DelePdfPoint PdfPointhandler;
+
+        public delegate void DeleBoundedCut(int page, Rectangle rectangle);
+        public event DeleBoundedCut BoundedCutHandler;
+
+        private static readonly Padding PageMargin = new Padding(4);
+        private static readonly SolidBrush _textSelectionBrush = new SolidBrush(Color.FromArgb(90, Color.DodgerBlue));
+
         private int _maxWidth;
         private int _maxHeight;
         private double _documentScaleFactor;
@@ -32,7 +45,11 @@ namespace PdfiumViewer
         private DragState _dragState;
         private PdfRotation _rotation;
         private List<IPdfMarker>[] _markers;
-
+        private PdfViewerCursorMode _cursorMode = PdfViewerCursorMode.Pan;
+        private bool _isSelectingText = false;
+        private MouseState _cachedMouseState = null;
+        private TextSelectionState _textSelectionState = null;
+        private Rectangle _currRect = Rectangle.Empty;
         /// <summary>
         /// The associated PDF document.
         /// </summary>
@@ -111,7 +128,49 @@ namespace PdfiumViewer
             page = Math.Min(Math.Max(page, 0), Document.PageCount - 1);
             return _pageCache[page].OuterBounds;
         }
+        /// <summary>
+        /// Get the  BoundsOffset of the page.
+        /// </summary>
+        /// <param name="page">The page to get the BoundsOffset for.</param>
+        /// <returns>The BoundsOffset of the page.</returns>
+        public Rectangle GetBoundsOffset(int page)
+        {
+            if (Document == null || !_pageCacheValid)
+                return Rectangle.Empty;
 
+            page = Math.Min(Math.Max(page, 0), Document.PageCount - 1);
+            var pageBounds = _pageCache[page].Bounds;
+            var offset = GetScrollOffset();
+            pageBounds.Offset(offset.Width, offset.Height);
+            return pageBounds;
+        }
+        /// <summary>
+        /// Get the  Bounds of the page.
+        /// </summary>
+        /// <param name="page">The page to get the Bounds for.</param>
+        /// <returns>The Bounds of the page.</returns>
+        public Rectangle GetBounds(int page)
+        {
+            if (Document == null || !_pageCacheValid)
+                return Rectangle.Empty;
+
+            page = Math.Min(Math.Max(page, 0), Document.PageCount - 1);
+            var pageBounds = _pageCache[page].Bounds;
+            return pageBounds;
+        }
+        /// <summary>
+        /// Get the image of the page.
+        /// </summary>
+        /// <param name="page">The page to get the image for.</param>
+        /// <returns>The image of the page.</returns>
+        public System.Drawing.Image GetImage(int page)
+        {
+            if (Document == null || !_pageCacheValid)
+                return null;
+
+            page = Math.Min(Math.Max(page, 0), Document.PageCount - 1);
+            return _pageCache[page].Image;
+        }
         /// <summary>
         /// Gets or sets the way the document should be zoomed initially.
         /// </summary>
@@ -122,6 +181,20 @@ namespace PdfiumViewer
             {
                 _zoomMode = value;
                 PerformLayout();
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the way the viewer should respond to cursor input
+        /// </summary>
+        [DefaultValue(PdfViewerCursorMode.Pan)]
+        public PdfViewerCursorMode CursorMode
+        {
+            get { return _cursorMode; }
+            set
+            {
+                _cursorMode = value;
+                MousePanningEnabled = _cursorMode == PdfViewerCursorMode.Pan;
             }
         }
 
@@ -138,6 +211,58 @@ namespace PdfiumViewer
                     _rotation = value;
                     ResetFromRotation();
                 }
+            }
+        }
+
+        /// <summary>
+        /// Indicates whether the user currently has text selected
+        /// </summary>
+        public bool IsTextSelected
+        {
+            get
+            {
+                var state = _textSelectionState?.GetNormalized();
+                if (state == null)
+                    return false;
+
+                if (state.EndPage < 0 || state.EndIndex < 0)
+                    return false;
+
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Gets the currently selected text
+        /// </summary>
+        public string SelectedText
+        {
+            get
+            {
+                var state = _textSelectionState?.GetNormalized();
+                if (state == null)
+                    return null;
+
+                var sb = new StringBuilder();
+                for (int page = state.StartPage; page <= state.EndPage; page++)
+                {
+                    int start = 0, end = 0;
+
+                    if (page == state.StartPage)
+                        start = state.StartIndex;
+
+                    if (page == state.EndPage)
+                        end = (state.EndIndex + 1);
+                    else
+                        end = Document.CountCharacters(page);
+
+                    if (page != state.StartPage)
+                        sb.AppendLine();
+
+                    sb.Append(Document.GetPdfText(new PdfTextSpan(page, start, end - start)));
+                }
+
+                return sb.ToString();
             }
         }
 
@@ -283,7 +408,7 @@ namespace PdfiumViewer
         {
             return BoundsFromPdf(bounds, true);
         }
-            
+
         private Rectangle BoundsFromPdf(PdfRectangle bounds, bool translateOffset)
         {
             var offset = translateOffset ? GetScrollOffset() : Size.Empty;
@@ -384,6 +509,51 @@ namespace PdfiumViewer
             UpdateScrollbars();
         }
 
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            switch ((e.KeyData) & Keys.KeyCode)
+            {
+                case Keys.A:
+                    if ((e.KeyData & Keys.Modifiers) == Keys.Control)
+                        SelectAll();
+                    break;
+                case Keys.D:
+                    if ((e.KeyData & Keys.Modifiers) == Keys.Control)
+                        DeSelectAll();
+                    break;
+                case Keys.C:
+                    if ((e.KeyData & Keys.Modifiers) == Keys.Control)
+                        CopySelection();
+                    break;
+            }
+
+            base.OnKeyDown(e);
+        }
+        public void DeSelectAll()
+        {
+            _textSelectionState = null;
+            Invalidate();
+        }
+        public void SelectAll()
+        {
+            _textSelectionState = new TextSelectionState()
+            {
+                StartPage = 0,
+                StartIndex = 0,
+                EndPage = Document.PageCount - 1,
+                EndIndex = Document.CountCharacters(Document.PageCount - 1) - 1
+            };
+
+            Invalidate();
+        }
+
+        public void CopySelection()
+        {
+            var text = SelectedText;
+            if (text?.Length > 0)
+                Clipboard.SetText(text);
+        }
+
         /// <summary>
         /// Load a <see cref="IPdfDocument"/> into the control.
         /// </summary>
@@ -404,14 +574,13 @@ namespace PdfiumViewer
 
         private void ReloadDocument()
         {
-            _height = 0;
             _maxWidth = 0;
             _maxHeight = 0;
+            _textSelectionState = null;
 
             foreach (var size in Document.PageSizes)
             {
                 var translated = TranslateSize(size);
-                _height += (int)translated.Height;
                 _maxWidth = Math.Max((int)translated.Width, _maxWidth);
                 _maxHeight = Math.Max((int)translated.Height, _maxHeight);
             }
@@ -419,6 +588,8 @@ namespace PdfiumViewer
             _documentScaleFactor = _maxHeight != 0 ? (double)_maxWidth / _maxHeight : 0D;
 
             _markers = null;
+
+            Markers?.Clear();
 
             UpdateScrollbars();
 
@@ -653,6 +824,15 @@ namespace PdfiumViewer
                     _shadeBorder.Draw(e.Graphics, pageBounds);
 
                     DrawMarkers(e.Graphics, page);
+
+                    var selectionInfo = _textSelectionState;
+                    if (selectionInfo != null)
+                        DrawTextSelection(e.Graphics, page, selectionInfo.GetNormalized());
+
+                    if (_currRect != Rectangle.Empty)
+                    {
+                        DrawRedRectangle(e.Graphics, page);
+                    }
                 }
             }
 
@@ -660,6 +840,37 @@ namespace PdfiumViewer
                 _visiblePageStart = 0;
             if (_visiblePageEnd == -1)
                 _visiblePageEnd = Document.PageCount - 1;
+        }
+
+        private void DrawTextSelection(Graphics graphics, int page, TextSelectionState state)
+        {
+            if (state.EndPage < 0 || state.EndIndex < 0)
+                return;
+
+            if (page >= state.StartPage && page <= state.EndPage)
+            {
+                int start = 0, end = 0;
+
+                if (page == state.StartPage)
+                    start = state.StartIndex;
+
+                if (page == state.EndPage)
+                    end = (state.EndIndex + 1);
+                else
+                    end = Document.CountCharacters(page);
+
+                Region region = null;
+                foreach (var rectangle in Document.GetTextRectangles(page, start, end - start))
+                {
+                    if (region == null)
+                        region = new Region(BoundsFromPdf(rectangle));
+                    else
+                        region.Union(BoundsFromPdf(rectangle));
+                }
+
+                if (region != null)
+                    graphics.FillRegion(_textSelectionBrush, region);
+            }
         }
 
         private void DrawPageImage(Graphics graphics, int page, Rectangle pageBounds)
@@ -671,16 +882,22 @@ namespace PdfiumViewer
 
             graphics.DrawImageUnscaled(pageCache.Image, pageBounds.Location);
         }
-
         /// <summary>
         /// Gets the document bounds.
         /// </summary>
         /// <returns>The document bounds.</returns>
         protected override Rectangle GetDocumentBounds()
         {
-            int height = (int)(_height * _scaleFactor + (ShadeBorder.Size.Vertical + PageMargin.Vertical) * Document.PageCount);
+            int scaledHeight = 0;
+            for (int page = 0; page < Document.PageSizes.Count; page++)
+            {
+                var size = TranslateSize(Document.PageSizes[page]);
+                scaledHeight += (int)(size.Height * _scaleFactor);
+            }
+
+            int height = (int)(scaledHeight + (ShadeBorder.Size.Vertical + PageMargin.Vertical) * Document.PageCount);
             int width = (int)(_maxWidth * _scaleFactor + ShadeBorder.Size.Horizontal + PageMargin.Horizontal);
-            
+
             var center = new Point(
                 DisplayRectangle.Width / 2,
                 DisplayRectangle.Height / 2
@@ -689,7 +906,8 @@ namespace PdfiumViewer
             if (
                 DisplayRectangle.Width > ClientSize.Width ||
                 DisplayRectangle.Height > ClientSize.Height
-            ) {
+            )
+            {
                 center.X += DisplayRectangle.Left;
                 center.Y += DisplayRectangle.Top;
             }
@@ -701,7 +919,6 @@ namespace PdfiumViewer
                 height
             );
         }
-
         /// <summary>
         /// Called whent he cursor changes.
         /// </summary>
@@ -718,7 +935,11 @@ namespace PdfiumViewer
                     e.Location.X - offset.Width,
                     e.Location.Y - offset.Height
                 );
-
+                for (int i = 0; i < Markers.Count; i++)
+                {
+                    if (Markers[i] is AnnotMarker)
+                        Markers.RemoveAt(i);
+                }
                 for (int page = _visiblePageStart; page <= _visiblePageEnd; page++)
                 {
                     foreach (var link in GetPageLinks(page))
@@ -727,8 +948,33 @@ namespace PdfiumViewer
                         {
                             _cachedLink = link;
                             e.Cursor = Cursors.Hand;
+                            if (link.Link.LightAnnot != null && !string.IsNullOrEmpty(link.Link.LightAnnot.Content))
+                            {
+                                //var bounds = new RectangleF( pdfBounds.X1,pdfBounds.Y1, pdfBounds.X2- pdfBounds.X1,pdfBounds.Y1- pdfBounds.Y3);
+                                var marker = new AnnotMarker(page, link.Link.LightAnnot, link.Link.Bounds, Zoom);
+                                Markers.Add(marker);
+                            }
                             return;
                         }
+                    }
+                }
+
+                if (_cursorMode == PdfViewerCursorMode.TextSelection)
+                {
+                    var state = GetMouseState(e.Location);
+                    if (state.CharacterIndex >= 0)
+                    {
+                        e.Cursor = Cursors.IBeam;
+                        return;
+                    }
+                }
+                if (_cursorMode == PdfViewerCursorMode.Cross)
+                {
+                    var state = GetMouseState(e.Location);
+                    if (state.CharacterIndex >= 0)
+                    {
+                        e.Cursor = Cursors.Cross;
+                        return;
                     }
                 }
             }
@@ -742,6 +988,68 @@ namespace PdfiumViewer
         {
             base.OnMouseDown(e);
 
+            HandleMouseDownForLinks(e);
+
+            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            {
+                HandleMouseDownForTextSelection(e);
+            }
+            else if (_cursorMode == PdfViewerCursorMode.Cross ||
+                _cursorMode == PdfViewerCursorMode.Cut)
+            {
+                HandleMouseDownForDrawRedMouseDown(e);
+            }
+        }
+
+        /// <summary>Raises the <see cref="E:System.Windows.Forms.Control.MouseUp" /> event.</summary>
+        /// <param name="e">A <see cref="T:System.Windows.Forms.MouseEventArgs" /> that contains the event data. </param>
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+
+            HandleMouseUpForLinks(e);
+
+            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            {
+                HandleMouseUpForTextSelection(e);
+            }
+            else if (_cursorMode == PdfViewerCursorMode.Cross)
+            {
+                HandleMouseUpDrawRedRectangle(e);
+            }
+            else if (_cursorMode == PdfViewerCursorMode.Cut)
+            {
+                HandleMouseUpCutRectangle(e);
+            }
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            base.OnMouseMove(e);
+            PdfPointhandler?.Invoke(this.PointToPdf(e.Location));
+            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            {
+                HandleMouseMoveForTextSelection(e);
+            }
+            else if (_cursorMode == PdfViewerCursorMode.Cross ||
+                _cursorMode == PdfViewerCursorMode.Cut)
+            {
+                HandleMouseMoveDrawRedRectangle(e);
+            }
+        }
+
+        protected override void OnMouseDoubleClick(MouseEventArgs e)
+        {
+            base.OnMouseDoubleClick(e);
+
+            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            {
+                HandleMouseDoubleClickForTextSelection(e);
+            }
+        }
+
+        private void HandleMouseDownForLinks(MouseEventArgs e)
+        {
             _dragState = null;
 
             if (_cachedLink != null)
@@ -754,12 +1062,8 @@ namespace PdfiumViewer
             }
         }
 
-        /// <summary>Raises the <see cref="E:System.Windows.Forms.Control.MouseUp" /> event.</summary>
-        /// <param name="e">A <see cref="T:System.Windows.Forms.MouseEventArgs" /> that contains the event data. </param>
-        protected override void OnMouseUp(MouseEventArgs e)
+        private void HandleMouseUpForLinks(MouseEventArgs e)
         {
-            base.OnMouseUp(e);
-
             if (_dragState == null)
                 return;
 
@@ -801,6 +1105,188 @@ namespace PdfiumViewer
                     // be thrown (when it auto-updates).
                 }
             }
+        }
+
+        #region 框选文字
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="e"></param>
+        private void HandleMouseDownForDrawRedMouseDown(MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+            _currRect.X = e.X;
+            _currRect.Y = e.Y;
+        }
+
+        private void HandleMouseMoveDrawRedRectangle(MouseEventArgs e)
+        {
+            if (!_currRect.IsEmpty)
+            {
+                _currRect.Width = e.X - _currRect.X;
+                _currRect.Height = e.Y - _currRect.Y;
+            }
+            Invalidate();
+        }
+        private void HandleMouseUpDrawRedRectangle(MouseEventArgs e)
+        {
+            if (this.Document.GetPdfEditable(Page))
+            {
+                var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
+                var point2 = this.PointToPdf(e.Location);
+                int x = (int)point1.Location.X;
+                int y = (int)point2.Location.Y;
+                int x1 = (int)point2.Location.X;
+                int y1 = (int)point1.Location.Y;
+                var txt = this.Document.GetBoundedText(Page, x, y, x1, y1);
+                _currRect = Rectangle.Empty;
+                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
+                    return;
+                BoundedTextHandler?.Invoke(Page, x, y, x1, y1, txt, true);
+            }
+            else
+            {
+                var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
+                var point2 = this.PointToPdf(e.Location);
+                var bound = Document.PageSizes[Page];
+                var x = (int)point1.Location.X;
+                var y = (int)point1.Location.Y;
+                var x1 = (int)point2.Location.X;
+                var y1 = (int)point2.Location.Y;
+                _currRect = Rectangle.Empty;
+                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
+                    return;
+                BoundedTextHandler?.Invoke(Page, x, y, x1, y1, "", false);
+            }
+        }
+        private void HandleMouseUpCutRectangle(MouseEventArgs e)
+        {
+            var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
+            var point2 = this.PointToPdf(e.Location);
+
+            var bound = Document.PageSizes[Page];
+            var rect = new Rectangle();
+            var x = (int)point1.Location.X;
+            var y = (int)Math.Abs(bound.Height - point1.Location.Y);
+            var x1 = (int)point2.Location.X;
+            var y1 = (int)Math.Abs(bound.Height - point2.Location.Y);
+
+            rect.X = Math.Min(x, x1);
+            rect.Y = Math.Min(y, y1);
+            rect.Width = Math.Abs(x1 - x);
+            rect.Height = Math.Abs(y1 - y);
+            _currRect = Rectangle.Empty;
+            if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
+                return;
+            BoundedCutHandler?.Invoke(Page, rect);
+        }
+        private void DrawRedRectangle(Graphics g, int page)
+        {
+            Pen pen = new Pen(Color.Red, 1.0f);
+            g.DrawRectangle(pen, _currRect);
+        }
+        #endregion
+
+        #region 复制
+        private void HandleMouseDownForTextSelection(MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            var pdfLocation = PointToPdf(e.Location);
+            if (!pdfLocation.IsValid)
+                return;
+
+            var characterIndex = Document.GetCharacterIndexAtPosition(pdfLocation, 4f, 4f);
+
+            if (characterIndex >= 0)
+            {
+                _textSelectionState = new TextSelectionState()
+                {
+                    StartPage = pdfLocation.Page,
+                    StartIndex = characterIndex,
+                    EndPage = -1,
+                    EndIndex = -1
+                };
+                _isSelectingText = true;
+                Capture = true;
+            }
+            else
+            {
+                _isSelectingText = false;
+                Capture = false;
+                _textSelectionState = null;
+            }
+        }
+        private void HandleMouseUpForTextSelection(MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            _isSelectingText = false;
+            Capture = false;
+            Invalidate();
+        }
+
+        private void HandleMouseMoveForTextSelection(MouseEventArgs e)
+        {
+            if (!_isSelectingText)
+                return;
+
+            var mouseState = GetMouseState(e.Location);
+
+            if (mouseState.CharacterIndex >= 0)
+            {
+                _textSelectionState.EndPage = mouseState.PdfLocation.Page;
+                _textSelectionState.EndIndex = mouseState.CharacterIndex;
+
+                Invalidate();
+            }
+        }
+
+        private void HandleMouseDoubleClickForTextSelection(MouseEventArgs e)
+        {
+            var pdfLocation = PointToPdf(e.Location);
+            if (!pdfLocation.IsValid)
+                return;
+
+            if (Document.GetWordAtPosition(pdfLocation, 4f, 4f, out var word))
+            {
+                _textSelectionState = new TextSelectionState()
+                {
+                    StartPage = pdfLocation.Page,
+                    EndPage = pdfLocation.Page,
+                    StartIndex = word.Offset,
+                    EndIndex = word.Offset + word.Length
+                };
+
+                Invalidate();
+            }
+        }
+        #endregion
+
+        private MouseState GetMouseState(Point mouseLocation)
+        {
+            // OnMouseMove and OnSetCursor get invoked a lot, often multiple times in succession for the same point.
+            // By just caching the mouse state for the last known position we can save a lot of work.
+
+            var currentState = _cachedMouseState;
+            if (currentState?.MouseLocation == mouseLocation)
+                return currentState;
+
+            _cachedMouseState = new MouseState()
+            {
+                MouseLocation = mouseLocation,
+                PdfLocation = PointToPdf(mouseLocation)
+            };
+
+            if (!_cachedMouseState.PdfLocation.IsValid)
+                return _cachedMouseState;
+
+            _cachedMouseState.CharacterIndex = Document.GetCharacterIndexAtPosition(_cachedMouseState.PdfLocation, 4f, 4f);
+
+            return _cachedMouseState;
         }
 
         /// <summary>
@@ -1016,14 +1502,14 @@ namespace PdfiumViewer
             base.Dispose(disposing);
         }
 
+        #region 内部类
         private class PageCache
         {
             public List<PageLink> Links { get; set; }
             public Rectangle Bounds { get; set; }
             public Rectangle OuterBounds { get; set; }
-            public Image Image { get; set; }
+            public System.Drawing.Image Image { get; set; }
         }
-
         private class PageLink
         {
             public PdfPageLink Link { get; }
@@ -1041,5 +1527,44 @@ namespace PdfiumViewer
             public PdfPageLink Link { get; set; }
             public Point Location { get; set; }
         }
+
+        private class MouseState
+        {
+            public Point MouseLocation { get; set; }
+            public PdfPoint PdfLocation { get; set; }
+            public int CharacterIndex { get; set; }
+        }
+
+        private class TextSelectionState
+        {
+            public int StartPage { get; set; }
+            public int StartIndex { get; set; }
+            public int EndPage { get; set; }
+            public int EndIndex { get; set; }
+
+            public TextSelectionState GetNormalized()
+            {
+                if (EndPage < 0 || EndIndex < 0) // Special case when only start position is known
+                    return this;
+
+                if (EndPage < StartPage ||
+                    (StartPage == EndPage && EndIndex < StartIndex))
+                {
+                    // End position is before start position.
+                    // Swap positions so start is always before end.
+
+                    return new TextSelectionState()
+                    {
+                        StartPage = EndPage,
+                        StartIndex = EndIndex,
+                        EndPage = StartPage,
+                        EndIndex = StartIndex
+                    };
+                }
+
+                return this;
+            }
+        }
+        #endregion
     }
 }
