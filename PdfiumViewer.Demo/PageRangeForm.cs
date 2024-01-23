@@ -1,4 +1,5 @@
 ﻿using Pdfium.Net;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -11,11 +12,11 @@ namespace PdfiumViewer.Demo
 {
     public partial class PageRangeForm : Form
     {
-        private readonly IPdfDocument _document;
+        private readonly FpdfDocument _document;
 
-        public IPdfDocument Document { get; private set; }
+        public FpdfDocument Document { get; private set; }
 
-        public PageRangeForm(IPdfDocument document)
+        public PageRangeForm(FpdfDocument document)
         {
             _document = document;
 

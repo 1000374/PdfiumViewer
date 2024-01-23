@@ -78,6 +78,7 @@ namespace PdfiumViewer.Demo
             this.createNewPageToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.addTextToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.addImageToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
+            this.addImageObjToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.getFontInfoToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.toolStrip1 = new System.Windows.Forms.ToolStrip();
             this.toolStripLabel1 = new System.Windows.Forms.ToolStripLabel();
@@ -115,6 +116,7 @@ namespace PdfiumViewer.Demo
             this.copyToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.selectAllToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.pdfViewer1 = new PdfiumViewer.PdfViewer();
+            this.closeToolStripMenuItem = new System.Windows.Forms.ToolStripMenuItem();
             this.menuStrip1.SuspendLayout();
             this.toolStrip1.SuspendLayout();
             this.statusStrip1.SuspendLayout();
@@ -375,7 +377,9 @@ namespace PdfiumViewer.Demo
             this.createNewPageToolStripMenuItem,
             this.addTextToolStripMenuItem,
             this.addImageToolStripMenuItem,
-            this.getFontInfoToolStripMenuItem});
+            this.addImageObjToolStripMenuItem,
+            this.getFontInfoToolStripMenuItem,
+            this.closeToolStripMenuItem});
             this.testToolStripMenuItem1.Name = "testToolStripMenuItem1";
             this.testToolStripMenuItem1.Size = new System.Drawing.Size(44, 21);
             this.testToolStripMenuItem1.Text = "Test";
@@ -383,91 +387,98 @@ namespace PdfiumViewer.Demo
             // splitintToolStripMenuItem
             // 
             this.splitintToolStripMenuItem.Name = "splitintToolStripMenuItem";
-            this.splitintToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.splitintToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.splitintToolStripMenuItem.Text = "Split";
             this.splitintToolStripMenuItem.Click += new System.EventHandler(this.splitintToolStripMenuItem_Click);
             // 
             // mergeToolStripMenuItem
             // 
             this.mergeToolStripMenuItem.Name = "mergeToolStripMenuItem";
-            this.mergeToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.mergeToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.mergeToolStripMenuItem.Text = "Merge";
             this.mergeToolStripMenuItem.Click += new System.EventHandler(this.mergeToolStripMenuItem_Click);
             // 
             // importToolStripMenuItem
             // 
             this.importToolStripMenuItem.Name = "importToolStripMenuItem";
-            this.importToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.importToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.importToolStripMenuItem.Text = "Import";
             this.importToolStripMenuItem.Click += new System.EventHandler(this.importToolStripMenuItem_Click);
             // 
             // replaceToolStripMenuItem
             // 
             this.replaceToolStripMenuItem.Name = "replaceToolStripMenuItem";
-            this.replaceToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.replaceToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.replaceToolStripMenuItem.Text = "Replace";
             this.replaceToolStripMenuItem.Click += new System.EventHandler(this.replaceToolStripMenuItem_Click);
             // 
             // thumbnailToolStripMenuItem
             // 
             this.thumbnailToolStripMenuItem.Name = "thumbnailToolStripMenuItem";
-            this.thumbnailToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.thumbnailToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.thumbnailToolStripMenuItem.Text = "thumbnail";
             this.thumbnailToolStripMenuItem.Click += new System.EventHandler(this.thumbnailToolStripMenuItem_Click);
             // 
             // signatureToolStripMenuItem
             // 
             this.signatureToolStripMenuItem.Name = "signatureToolStripMenuItem";
-            this.signatureToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.signatureToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.signatureToolStripMenuItem.Text = "Signature";
             this.signatureToolStripMenuItem.Click += new System.EventHandler(this.signatureToolStripMenuItem_Click);
             // 
             // addWaterMarkToolStripMenuItem
             // 
             this.addWaterMarkToolStripMenuItem.Name = "addWaterMarkToolStripMenuItem";
-            this.addWaterMarkToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.addWaterMarkToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.addWaterMarkToolStripMenuItem.Text = "AddWaterMark";
             this.addWaterMarkToolStripMenuItem.Click += new System.EventHandler(this.addWaterMarkToolStripMenuItem_Click);
             // 
             // npageToOneToolStripMenuItem
             // 
             this.npageToOneToolStripMenuItem.Name = "npageToOneToolStripMenuItem";
-            this.npageToOneToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.npageToOneToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.npageToOneToolStripMenuItem.Text = "NpageToOne";
             this.npageToOneToolStripMenuItem.Click += new System.EventHandler(this.npageToOneToolStripMenuItem_Click);
             // 
             // createDocumentToolStripMenuItem
             // 
             this.createDocumentToolStripMenuItem.Name = "createDocumentToolStripMenuItem";
-            this.createDocumentToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.createDocumentToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.createDocumentToolStripMenuItem.Text = "CreateDocument";
             this.createDocumentToolStripMenuItem.Click += new System.EventHandler(this.createDocumentToolStripMenuItem_Click);
             // 
             // createNewPageToolStripMenuItem
             // 
             this.createNewPageToolStripMenuItem.Name = "createNewPageToolStripMenuItem";
-            this.createNewPageToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.createNewPageToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.createNewPageToolStripMenuItem.Text = "CreateNewPage";
             this.createNewPageToolStripMenuItem.Click += new System.EventHandler(this.createNewPageToolStripMenuItem_Click);
             // 
             // addTextToolStripMenuItem
             // 
             this.addTextToolStripMenuItem.Name = "addTextToolStripMenuItem";
-            this.addTextToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.addTextToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.addTextToolStripMenuItem.Text = "AddText";
             this.addTextToolStripMenuItem.Click += new System.EventHandler(this.addTextToolStripMenuItem_Click);
             // 
             // addImageToolStripMenuItem
             // 
             this.addImageToolStripMenuItem.Name = "addImageToolStripMenuItem";
-            this.addImageToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.addImageToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.addImageToolStripMenuItem.Text = "AddImage";
             this.addImageToolStripMenuItem.Click += new System.EventHandler(this.addImageToolStripMenuItem_Click);
+            // 
+            // addImageObjToolStripMenuItem
+            // 
+            this.addImageObjToolStripMenuItem.Name = "addImageObjToolStripMenuItem";
+            this.addImageObjToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.addImageObjToolStripMenuItem.Text = "AddImageObj";
+            this.addImageObjToolStripMenuItem.Click += new System.EventHandler(this.addImageObjToolStripMenuItem_Click);
             // 
             // getFontInfoToolStripMenuItem
             // 
             this.getFontInfoToolStripMenuItem.Name = "getFontInfoToolStripMenuItem";
-            this.getFontInfoToolStripMenuItem.Size = new System.Drawing.Size(173, 22);
+            this.getFontInfoToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
             this.getFontInfoToolStripMenuItem.Text = "GetFontInfo";
             this.getFontInfoToolStripMenuItem.Click += new System.EventHandler(this.getFontInfoToolStripMenuItem_Click);
             // 
@@ -514,6 +525,7 @@ namespace PdfiumViewer.Demo
             // 
             // _page
             // 
+            this._page.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
             this._page.Name = "_page";
             this._page.Size = new System.Drawing.Size(100, 25);
             this._page.KeyDown += new System.Windows.Forms.KeyEventHandler(this._page_KeyDown);
@@ -556,6 +568,7 @@ namespace PdfiumViewer.Demo
             // 
             // _zoom
             // 
+            this._zoom.Font = new System.Drawing.Font("Microsoft YaHei UI", 9F);
             this._zoom.Name = "_zoom";
             this._zoom.Size = new System.Drawing.Size(100, 25);
             this._zoom.KeyDown += new System.Windows.Forms.KeyEventHandler(this._zoom_KeyDown);
@@ -668,7 +681,7 @@ namespace PdfiumViewer.Demo
             this._showBookmarks.Image = ((System.Drawing.Image)(resources.GetObject("_showBookmarks.Image")));
             this._showBookmarks.ImageTransparentColor = System.Drawing.Color.Magenta;
             this._showBookmarks.Name = "_showBookmarks";
-            this._showBookmarks.Size = new System.Drawing.Size(114, 22);
+            this._showBookmarks.Size = new System.Drawing.Size(114, 21);
             this._showBookmarks.Text = "Show Bookmarks";
             this._showBookmarks.Click += new System.EventHandler(this._hideBookmarks_Click);
             // 
@@ -788,6 +801,13 @@ namespace PdfiumViewer.Demo
             this.pdfViewer1.Size = new System.Drawing.Size(906, 565);
             this.pdfViewer1.TabIndex = 0;
             // 
+            // closeToolStripMenuItem
+            // 
+            this.closeToolStripMenuItem.Name = "closeToolStripMenuItem";
+            this.closeToolStripMenuItem.Size = new System.Drawing.Size(180, 22);
+            this.closeToolStripMenuItem.Text = "close";
+            this.closeToolStripMenuItem.Click += new System.EventHandler(this.closeToolStripMenuItem_Click);
+            // 
             // MainForm
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 12F);
@@ -897,6 +917,8 @@ namespace PdfiumViewer.Demo
         private System.Windows.Forms.ToolStripMenuItem createNewPageToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem createDocumentToolStripMenuItem;
         private System.Windows.Forms.ToolStripMenuItem addWaterMarkToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem addImageObjToolStripMenuItem;
+        private System.Windows.Forms.ToolStripMenuItem closeToolStripMenuItem;
     }
 }
 

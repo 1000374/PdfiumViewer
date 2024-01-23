@@ -1,4 +1,5 @@
 ﻿using Pdfium.Net;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -12,14 +13,14 @@ namespace PdfiumViewer
     /// </summary>
     public partial class PdfViewer : UserControl
     {
-        private IPdfDocument _document;
+        private PdfDocument _document;
         private bool _showBookmarks;
 
         /// <summary>
         /// Gets or sets the PDF document.
         /// </summary>
         [DefaultValue(null)]
-        public IPdfDocument Document
+        public PdfDocument Document
         {
             get { return _document; }
             set
@@ -27,13 +28,11 @@ namespace PdfiumViewer
                 if (_document != value)
                 {
                     _document = value;
-
                     if (_document != null)
                     {
                         _renderer.Load(_document);
                         UpdateBookmarks();
                     }
-
                     UpdateEnabled();
                 }
             }
@@ -149,6 +148,14 @@ namespace PdfiumViewer
             UpdateEnabled();
         }
 
+        public void Close()
+        {
+            _container.Panel1Collapsed = true;
+            _bookmarks.Nodes.Clear();
+            _renderer.Close();
+            _document = null;
+        }
+
         private void UpdateEnabled()
         {
             _toolStrip.Enabled = _document != null;
@@ -156,16 +163,23 @@ namespace PdfiumViewer
 
         private void _zoomInButton_Click(object sender, EventArgs e)
         {
+            if (_document == null)
+                return;
             _renderer.ZoomIn();
         }
 
         private void _zoomOutButton_Click(object sender, EventArgs e)
         {
+            if (_document == null)
+                return;
             _renderer.ZoomOut();
         }
 
         private void _saveButton_Click(object sender, EventArgs e)
         {
+            if (_document == null)
+                return;
+
             using (var form = new SaveFileDialog())
             {
                 form.DefaultExt = ".pdf";
@@ -196,6 +210,8 @@ namespace PdfiumViewer
 
         private void _printButton_Click(object sender, EventArgs e)
         {
+            if (_document == null)
+                return;
             using (var form = new PrintDialog())
             using (var document = _document.CreatePrintDocument(DefaultPrintMode))
             {
@@ -243,5 +259,6 @@ namespace PdfiumViewer
         {
             OnLinkClick(e);
         }
+
     }
 }

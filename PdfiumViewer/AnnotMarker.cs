@@ -1,4 +1,5 @@
 ﻿using Pdfium.Net;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -77,7 +78,7 @@ namespace PdfiumViewer
                 graphics.DrawString(item.context, font, Brushes.Black, new Point(bounds.Location.X + 5, (int)ly));
                 ly += item.size.Height;
             }
-
+            font.Dispose();
             //if (BorderWidth > 0)
             //{
             //    using (var pen = new Pen(BorderColor, BorderWidth))

@@ -1,4 +1,5 @@
 ﻿using Pdfium.Net;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Diagnostics;
 using System.Text;
@@ -105,7 +106,7 @@ namespace PdfiumViewer.WPFDemo
                 tokenSource.Cancel();
 
             if (pdfDoc != null)
-                pdfDoc.Dispose();
+                pdfDoc.Dispose(true);
         }
 
         private void DoSearch_Click(object sender, RoutedEventArgs e)

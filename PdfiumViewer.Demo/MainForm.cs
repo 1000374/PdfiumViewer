@@ -1,5 +1,6 @@
 ﻿using Pdfium.Net;
 using Pdfium.Net.Native.Pdfium.Enums;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -18,12 +19,12 @@ namespace PdfiumViewer.Demo
         private string fileName;
         List<int> list = new List<int>();
         private string outImagePath;
+
         public MainForm()
         {
             InitializeComponent();
 
             renderToBitmapsToolStripMenuItem.Enabled = false;
-
             pdfViewer1.Renderer.ContextMenuStrip = pdfViewerContextMenu;
 
             pdfViewer1.Renderer.DisplayRectangleChanged += Renderer_DisplayRectangleChanged;
@@ -41,10 +42,10 @@ namespace PdfiumViewer.Demo
 
             _zoom.Text = pdfViewer1.Renderer.Zoom.ToString();
 
-            Disposed += (s, e) => pdfViewer1.Document?.Dispose();
+            Disposed += (s, e) => pdfViewer1.Document?.Dispose(true);
         }
 
-        private void Renderer_BoundedCutHandler(int page, Rectangle rectangle)
+        private void Renderer_BoundedCutHandler(int page, Rectangle rectangle, Image image)
         {
             MessageBox.Show($"page:{page} rectangle:{rectangle.ToString()}");
             string path;
@@ -56,6 +57,11 @@ namespace PdfiumViewer.Demo
                 path = form.SelectedPath;
             }
             var outputPath = Path.Combine(path, "Page " + page + "Cut.png");
+
+            image.Save(Path.Combine(path, "Page " + page + "Cut.png"));
+            image.Dispose();
+
+            #region
             //            var renderedPage = pdfViewer1.Document.Render(0,
             //        10000, // width in px
             //        0, // '0' to compute height according to aspect ratio
@@ -66,27 +72,27 @@ namespace PdfiumViewer.Demo
             //        PdfRotation.Rotate0, // no rotation
             //        PdfRenderFlags.None // no render flags
             //);
-            var document = pdfViewer1.Document;
-            for (int i = 0; i < document.PageCount; i++)
-            {
-                if (i != page)
-                    continue;
-                using (var image = document.Render(
-                    i,
-                    (int)document.PageSizes[i].Width,
-                    (int)document.PageSizes[i].Height,
-                   rectangle.X, // x of the top/left of clipping rectangle
-                   rectangle.Y, // y of the top/left point of clipping rectangle
-                   rectangle.Width, // width of clipping reactangle
-                   rectangle.Height, // height of clipping reactangle
-                   PdfRotation.Rotate0, // no rotation
-                   PdfRenderFlags.None // no render flags
-                                       ))
-                {
-                    image.Save(Path.Combine(path, "Page " + i + "Cut.png"));
-                }
-            }
-
+            //var document = pdfViewer1.Document;
+            //for (int i = 0; i < document.PageCount; i++)
+            //{
+            //    if (i != page)
+            //        continue;
+            //    using (var image = document.Render(
+            //        i,
+            //        (int)document.Pages[i].Width,
+            //        (int)document.Pages[i].Height,
+            //       rectangle.X, // x of the top/left of clipping rectangle
+            //       rectangle.Y, // y of the top/left point of clipping rectangle
+            //       rectangle.Width, // width of clipping reactangle
+            //       rectangle.Height, // height of clipping reactangle
+            //       FpdfRotation.Rotate0, // no rotation
+            //       Pdfium.Net.Wrapper.RenderFlags.None // no render flags
+            //                           ))
+            //    {
+            //        image.Save(Path.Combine(path, "Page " + i + "Cut.png"));
+            //    }
+            //}
+            #endregion
         }
 
         private void Renderer_PdfPointhandler(PdfPoint point)
@@ -188,7 +194,7 @@ namespace PdfiumViewer.Demo
             var args = Environment.GetCommandLineArgs();
             if (args.Length > 1)
             {
-                pdfViewer1.Document?.Dispose();
+                pdfViewer1.Document?.Dispose(true);
                 pdfViewer1.Document = OpenDocument(args[1]);
                 renderToBitmapsToolStripMenuItem.Enabled = true;
             }
@@ -204,7 +210,7 @@ namespace PdfiumViewer.Demo
         {
             try
             {
-                return PdfDocumentGdi.Load(this, new MemoryStream(File.ReadAllBytes(fileName)));
+                return PdfDocumentGdi.Load(this, new FileStream(fileName,FileMode.Open));
             }
             catch (Exception ex)
             {
@@ -227,9 +233,12 @@ namespace PdfiumViewer.Demo
                     return;
                 }
                 fileName = form.FileName;
-                pdfViewer1.Document?.Dispose();
+                pdfViewer1?.Close();
                 pdfViewer1.Document = OpenDocument(form.FileName);
                 renderToBitmapsToolStripMenuItem.Enabled = true;
+                var doc = pdfViewer1.Document;
+                var fontPath = @"c:\Windows\fonts\simhei.ttf";
+                doc?.LoadFont(fontPath);
             }
         }
 
@@ -241,19 +250,25 @@ namespace PdfiumViewer.Demo
             pdfViewer1.Renderer.Page = page;
         }
 
-        private void Rotate(PdfRotation rotate)
+        private void Rotate(FpdfRotation rotate)
         {
             // PdfRenderer does not support changes to the loaded document,
             // so we fake it by reloading the document into the renderer.
 
+            //int page = pdfViewer1.Renderer.Page;
+            //var document = pdfViewer1.Document;
+            //pdfViewer1.Document = null;
+            //document.RotatePage(page, rotate);
+            //var memoryStream = new MemoryStream();
+            //document.Save(memoryStream);
+            //pdfViewer1.Document = PdfDocumentGdi.Load(this, memoryStream);
+            //pdfViewer1.Renderer.Page = page;
+
             int page = pdfViewer1.Renderer.Page;
             var document = pdfViewer1.Document;
-            pdfViewer1.Document = null;
             document.RotatePage(page, rotate);
-            var memoryStream = new MemoryStream();
-            document.Save(memoryStream);
-            pdfViewer1.Document = PdfDocumentGdi.Load(this, memoryStream);
-            pdfViewer1.Renderer.Page = page;
+            pdfViewer1.Document = null;
+            pdfViewer1.Document = document;
         }
         private void exitToolStripMenuItem_Click(object sender, EventArgs e)
         {
@@ -294,7 +309,7 @@ namespace PdfiumViewer.Demo
             {
                 // 能展示签章 using (var image = document.Render(i, (int)document.PageSizes[i].Width * 4 / 3, (int)document.PageSizes[i].Height * 4 / 3, dpiX, dpiY, PdfRotation.Rotate0, PdfRenderFlags.Annotations))
                 // 能根据dpi变化 using (var image = document.Render(i, (int)document.PageSizes[i].Width * 4 / 3, (int)document.PageSizes[i].Height * 4 / 3, dpiX, dpiY, PdfRotation.Rotate0, PdfRenderFlags.CorrectFromDpi))
-                using (var image = document.Render(i, (int)document.PageSizes[i].Width * 4 / 3, (int)document.PageSizes[i].Height * 4 / 3, dpiX, dpiY, PdfRotation.Rotate0, PdfRenderFlags.Annotations | PdfRenderFlags.CorrectFromDpi))// false))
+                using (var image = document.Pages[i].Render((int)document.Pages[i].Width * 4 / 3, (int)document.Pages[i].Height * 4 / 3, dpiX, dpiY, FpdfRotation.Rotate0, Pdfium.Net.Wrapper.RenderFlags.Annotations | Pdfium.Net.Wrapper.RenderFlags.CorrectFromDpi))// false))
                 {
                     image.Save(Path.Combine(path, "Page " + i + ".png"));
                 }
@@ -420,44 +435,44 @@ namespace PdfiumViewer.Demo
 
         private void rotate0ToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Rotate(PdfRotation.Rotate0);
+            Rotate(FpdfRotation.Rotate0);
         }
 
         private void rotate90ToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Rotate(PdfRotation.Rotate90);
+            Rotate(FpdfRotation.Rotate90);
         }
 
         private void rotate180ToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Rotate(PdfRotation.Rotate180);
+            Rotate(FpdfRotation.Rotate180);
         }
 
         private void rotate270ToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            Rotate(PdfRotation.Rotate270);
+            Rotate(FpdfRotation.Rotate270);
         }
         private void getrotateToolStripMenuItem_Click(object sender, EventArgs e)
         {
             int page = pdfViewer1.Renderer.Page;
             var document = pdfViewer1.Document;
-            var rotation = document.GetRotation(page);
+            var rotation = document.Pages[page].GetRotation();
             MessageBox.Show(rotation.ToString());
         }
         private void showRangeOfPagesToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            using (var form = new PageRangeForm(pdfViewer1.Document))
-            {
-                if (form.ShowDialog(this) == DialogResult.OK)
-                {
-                    pdfViewer1.Document = form.Document;
-                }
-            }
+            //using (var form = new PageRangeForm(pdfViewer1.Document))
+            //{
+            //    if (form.ShowDialog(this) == DialogResult.OK)
+            //    {
+            //        pdfViewer1.Document = form.Document;
+            //    }
+            //}
         }
 
         private void informationToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            PdfInformation info = pdfViewer1.Document.GetInformation();
+            Information info = pdfViewer1.Document.GetInformation();
             StringBuilder sz = new StringBuilder();
             sz.AppendLine($"Author: {info.Author}");
             sz.AppendLine($"Creator: {info.Creator}");
@@ -473,15 +488,15 @@ namespace PdfiumViewer.Demo
         private void pageInformationToolStripMenuItem_Click(object sender, EventArgs e)
         {
             int page = pdfViewer1.Renderer.Page;
-            var info = pdfViewer1.Document.GetCharacterInformation(page);
+            var info = pdfViewer1.Document?.Pages[page].GetCharacterInformation();
         }
         private void _getTextFromPage_Click(object sender, EventArgs e)
         {
             int page = pdfViewer1.Renderer.Page;
-            string text = pdfViewer1.Document.GetPdfText(page);
-            string caption = string.Format("Page {0} contains {1} character(s):", page + 1, text.Length);
+            string text = pdfViewer1.Document?.Pages[page].GetPdfText();
+            string caption = string.Format("Page {0} contains {1} character(s):", page + 1, text?.Length);
 
-            if (text.Length > 128) text = text.Substring(0, 125) + "...\n\n\n\n..." + text.Substring(text.Length - 125);
+            if (text?.Length > 128) text = text.Substring(0, 125) + "...\n\n\n\n..." + text.Substring(text.Length - 125);
             MessageBox.Show(this, text, caption, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
@@ -533,21 +548,17 @@ namespace PdfiumViewer.Demo
             try
             {
                 var sheet = Convert.ToInt32(index);
-                var doc = PdfSupport.GetPDFPage((PdfDocument)document, sheet);
+                var doc = PdfSupport.GetPDFPage(document, sheet);
                 if (doc != null)
                 {
+                    document.Dispose(true);
                     pdfViewer1.Document = null;
                     pdfViewer1.Document = doc;
                 }
             }
             catch
             {
-                var doc = PdfSupport.GetPDFPage((PdfDocument)document, index);
-                if (doc != null)
-                {
-                    pdfViewer1.Document = null;
-                    pdfViewer1.Document = doc;
-                }
+
             }
         }
 
@@ -568,12 +579,10 @@ namespace PdfiumViewer.Demo
                 file = form.FileName;
             }
             var document = pdfViewer1.Document;
-            var doc = PdfSupport.MergePDF((PdfDocument)document, OpenDocument(file));
-            if (doc != null)
-            {
-                pdfViewer1.Document = null;
-                pdfViewer1.Document = doc;
-            }
+            document.MergePDF(OpenDocument(file));
+
+            pdfViewer1.Document = null;
+            pdfViewer1.Document = document;
         }
 
         private void importToolStripMenuItem_Click(object sender, EventArgs e)
@@ -606,12 +615,11 @@ namespace PdfiumViewer.Demo
             }
             catch { }
             var document = pdfViewer1.Document;
-            var doc = PdfSupport.ImportPage((PdfDocument)document, OpenDocument(file), sheet);
-            if (doc != null)
-            {
-                pdfViewer1.Document = null;
-                pdfViewer1.Document = doc;
-            }
+            document.ImportPage(OpenDocument(file), sheet);
+
+            pdfViewer1.Document = null;
+            pdfViewer1.Document = document;
+
         }
 
         private void replaceToolStripMenuItem_Click(object sender, EventArgs e)
@@ -646,46 +654,44 @@ namespace PdfiumViewer.Demo
 
             var document = pdfViewer1.Document;
             document.DeletePage(sheet);
-            var doc = PdfSupport.ImportPage((PdfDocument)document, OpenDocument(file), sheet);
-            if (doc != null)
-            {
-                pdfViewer1.Document = null;
-                pdfViewer1.Document = doc;
-            }
+            document.ImportPage(OpenDocument(file), sheet);
+
+            pdfViewer1.Document = null;
+            pdfViewer1.Document = document;
         }
         #region
         void Cutting()
         {
-            int dpiX;
-            int dpiY;
+            //int dpiX;
+            //int dpiY;
 
-            using (var form = new ExportBitmapsForm())
-            {
-                if (form.ShowDialog() != DialogResult.OK)
-                    return;
+            //using (var form = new ExportBitmapsForm())
+            //{
+            //    if (form.ShowDialog() != DialogResult.OK)
+            //        return;
 
-                dpiX = form.DpiX;
-                dpiY = form.DpiY;
-            }
+            //    dpiX = form.DpiX;
+            //    dpiY = form.DpiY;
+            //}
 
-            string path;
-            using (var form = new FolderBrowserDialog())
-            {
-                if (form.ShowDialog(this) != DialogResult.OK)
-                    return;
+            //string path;
+            //using (var form = new FolderBrowserDialog())
+            //{
+            //    if (form.ShowDialog(this) != DialogResult.OK)
+            //        return;
 
-                path = form.SelectedPath;
-            }
-            outImagePath = path;
-            var document = pdfViewer1.Document;
+            //    path = form.SelectedPath;
+            //}
+            //outImagePath = path;
+            //var document = pdfViewer1.Document;
 
-            for (int i = 0; i < document.PageCount; i++)
-            {
-                using (var image = document.Render(i, (int)document.PageSizes[i].Width * 4 / 3, (int)document.PageSizes[i].Height * 4 / 3, dpiX, dpiY, false))
-                {
-                    image.Save(Path.Combine(path, "Page " + i + ".png"));
-                }
-            }
+            //for (int i = 0; i < document.PageCount; i++)
+            //{
+            //    using (var image = document.Render(i, (int)document.PageSizes[i].Width * 4 / 3, (int)document.PageSizes[i].Height * 4 / 3, dpiX, dpiY, false))
+            //    {
+            //        image.Save(Path.Combine(path, "Page " + i + ".png"));
+            //    }
+            //}
         }
         ///// <summary>
         ///// 合并PDF
@@ -833,14 +839,15 @@ namespace PdfiumViewer.Demo
                     break;
                 using (var image = document.Render(
                     i,
-                    (int)document.PageSizes[i].Width,
-                    (int)document.PageSizes[i].Height,
+                    (int)document.Pages[i].Width,
+                    (int)document.Pages[i].Height,
                     16, // x of the top/left of clipping rectangle
                    283, // y of the top/left point of clipping rectangle
                    555, // width of clipping reactangle
                    316, // height of clipping reactangle
-                   PdfRotation.Rotate0, // no rotation
-                   PdfRenderFlags.None // no render flags
+                   0, 0,
+                   FpdfRotation.Rotate0, // no rotation
+                   Pdfium.Net.Wrapper.RenderFlags.None // no render flags
                                        ))
                 {
                     image.Save(Path.Combine(path, "Page " + i + "Cut.png"));
@@ -937,23 +944,23 @@ namespace PdfiumViewer.Demo
             }
             for (int i = 0; i < pdfViewer1.Document.PageCount; i++)
             {
-                var image = pdfViewer1.Document.RenderThumbnail(i);
+                var image = pdfViewer1.Document.Pages[i].RenderThumbnail();
                 image?.Save(Path.Combine(path, "Page " + i + ".png"));
             }
         }
 
         private void getFontInfoToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var doc = (PdfDocument)pdfViewer1.Document;
-            doc.Test();
+            //var doc =pdfViewer1.Document;
+            //doc.Test();
         }
 
         private void addTextToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var fontPath = @"c:\Windows\fonts\simhei.ttf";
             var cSharpString = "you ok 这是第一句。 这是第二行。a you ok";
-            ((PdfDocument)pdfViewer1.Document).AddString(0, cSharpString, 10, 50, 20, Color.FromArgb(128, 255, 0, 0), File.ReadAllBytes(fontPath),render_mode:FPDF_TEXT_RENDERMODE.STROKE, strokeColor:Color.FromArgb(128, 0, 255, 0),strokeWidth:0.1f);
             var doc = pdfViewer1.Document;
+            var pdfPage = doc.Pages[0];
+            pdfPage.AddString(cSharpString, 10, 50, 20, Color.FromArgb(128, 255, 0, 0), render_mode: FpdfTextRenderMode.STROKE, strokeColor: Color.FromArgb(128, 0, 255, 0), strokeWidth: 0.1f);
             pdfViewer1.Document = null;
             pdfViewer1.Document = doc;
         }
@@ -962,22 +969,34 @@ namespace PdfiumViewer.Demo
         {
             var imagePath = "D:\\NaLong\\一些有用的Demo\\pdf\\PdfiumViewer\\pdfium\\testing\\resources\\mona_lisa.jpg";
             var stream = new MemoryStream(File.ReadAllBytes(imagePath));
-            ((PdfDocument)pdfViewer1.Document).AddImage(0, stream, 50, 100);
             var doc = pdfViewer1.Document;
+            var pdfPage = doc.Pages[0];
+            pdfPage.AddImage(stream, 50, 100);
             pdfViewer1.Document = null;
             pdfViewer1.Document = doc;
         }
 
+        private void addImageObjToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            var imagePath = "D:\\NaLong\\一些有用的Demo\\pdf\\PdfiumViewer\\pdfium\\testing\\resources\\mona_lisa.jpg";
+            var stream = new MemoryStream(File.ReadAllBytes(imagePath));
+            var image = Image.FromStream(stream);
+            var doc = pdfViewer1.Document;
+            var pdfPage = doc.Pages[0];
+            pdfPage.AddImage(image, 200, 100);
+            pdfViewer1.Document = null;
+            pdfViewer1.Document = doc;
+        }
         private void signatureToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var sign = pdfViewer1.Document.Signature;
-            var count = sign.Count;
+            var count = pdfViewer1.Document.GetSignatureCount();
             if (count > 0)
             {
                 MessageBox.Show($"Signature {count}");
                 for (int i = 0; i < count; i++)
                 {
-                    MessageBox.Show($"SubFilter:{sign.GetSubFilter(i)} \r\nTime:{sign.GetTime(i)} \r\nReason:{sign.GetReason(i)}");
+                    var sign = pdfViewer1.Document.GetSignatureObject(i);
+                    MessageBox.Show($"SubFilter:{sign.GetSubFilter()} \r\nTime:{sign.GetTime()} \r\nReason:{sign.GetReason()}");
                 }
             }
         }
@@ -992,32 +1011,37 @@ namespace PdfiumViewer.Demo
         private void createDocumentToolStripMenuItem_Click(object sender, EventArgs e)
         {
             var doc = PdfDocument.CreateNew();
-            var fontPath = @"c:\Windows\fonts\simhei.ttf";
             var cSharpString = "you ok 这是第一句。 这是第二行。a you ok";
-            doc.CreateNewPage(0, 612, 792);
-            doc.AddString(0, cSharpString, 10, 50, 12, Color.FromArgb(128, 255, 0, 0), File.ReadAllBytes(fontPath));
+            doc.Pages.Insert(0, 612, 792);
+            var pdfPage = doc.Pages[0];
+            pdfPage.AddString(cSharpString, 10, 50, 12, Color.FromArgb(128, 255, 0, 0));
             pdfViewer1.Document = null;
             pdfViewer1.Document = doc;
         }
         private void createNewPageToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var fontPath = @"c:\Windows\fonts\simhei.ttf";
-            var cSharpString = "you ok 这是第一句。 这是第二行。a you ok";
-            var doc = (PdfDocument)pdfViewer1.Document;
+            var cSharpString = "心内1 (东院)";
+            var doc = pdfViewer1.Document;
             pdfViewer1.Document = null;
-            doc.CreateNewPage(0, 612, 792);
-            doc.AddString(0, cSharpString, 10, 50, 12, Color.FromArgb(128, 255, 0, 0), File.ReadAllBytes(fontPath));
+            doc.Pages.Insert(0, 612, 792);
+            var pdfPage = doc.Pages[0];
+            pdfPage.AddString(cSharpString, 10, 50, 12, Color.FromArgb(128, 255, 0, 0));
             pdfViewer1.Document = doc;
         }
 
         private void addWaterMarkToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            var fontPath = @"c:\Windows\fonts\simhei.ttf";
             var cSharpString = "我是水印";
-            var doc = (PdfDocument)pdfViewer1.Document;
-            doc.WaterMark(cSharpString, 50, Color.FromArgb(50, 255, 0, 0), File.ReadAllBytes(fontPath), totleHeight: 120,render_mode:FPDF_TEXT_RENDERMODE.STROKE, strokeColor: Color.FromArgb(50, 255, 0, 0), strokeWidth: 0.1f);
+            var doc = pdfViewer1.Document;
+            doc.WaterMark(cSharpString, 50, Color.FromArgb(50, 255, 0, 0), totleHeight: 120, render_mode: FpdfTextRenderMode.STROKE, strokeColor: Color.FromArgb(50, 255, 0, 0), strokeWidth: 0.1f);
             pdfViewer1.Document = null;
             pdfViewer1.Document = doc;
+        }
+
+        private void closeToolStripMenuItem_Click(object sender, EventArgs e)
+        {
+            pdfViewer1.Close();
+            GC.Collect(GC.MaxGeneration);
         }
     }
 }

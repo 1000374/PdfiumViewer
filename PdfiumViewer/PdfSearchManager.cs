@@ -1,4 +1,4 @@
-﻿using Pdfium.Net;
+﻿using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -12,8 +12,8 @@ namespace PdfiumViewer
     public class PdfSearchManager
     {
         private bool _highlightAllMatches;
-        private PdfMatches _matches;
-        private List<IList<PdfRectangle>> _bounds;
+        private TextMatches _matches;
+        private List<List<PdfRectangle>> _bounds;
         private int _firstMatch;
         private int _offset;
 
@@ -121,13 +121,14 @@ namespace PdfiumViewer
             return _matches != null && _matches.Items.Count > 0;
         }
 
-        private List<IList<PdfRectangle>> GetAllBounds()
+        private List<List<PdfRectangle>> GetAllBounds()
         {
-            var result = new List<IList<PdfRectangle>>();
+            var result = new List<List<PdfRectangle>>();
 
             foreach (var match in _matches.Items)
             {
-                result.Add(Renderer.Document.GetTextBounds(match.TextSpan));
+                var rectangle = Renderer.Document.Pages[match.TextSpan.Page].GetTextBounds(match.TextSpan);
+                result.Add(rectangle.ConvertAll<PdfRectangle>(rec => new PdfRectangle(match.TextSpan.Page, rec)));
             }
 
             return result;

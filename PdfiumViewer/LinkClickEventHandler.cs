@@ -1,4 +1,4 @@
-﻿using Pdfium.Net;
+﻿using Pdfium.Net.Wrapper;
 using System.ComponentModel;
 
 #pragma warning disable 1591
@@ -10,9 +10,9 @@ namespace PdfiumViewer
         /// <summary>
         /// Gets the link that was clicked.
         /// </summary>
-        public PdfPageLink Link { get; private set; }
+        public PageLink Link { get; private set; }
         
-        public LinkClickEventArgs(PdfPageLink link)
+        public LinkClickEventArgs(PageLink link)
         {
             Link = link;
         }

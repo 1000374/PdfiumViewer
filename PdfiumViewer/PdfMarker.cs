@@ -1,4 +1,5 @@
 ﻿using Pdfium.Net;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.Drawing;

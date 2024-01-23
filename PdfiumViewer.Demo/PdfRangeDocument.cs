@@ -2,6 +2,7 @@
 using Pdfium.Net.Native.Enums;
 using Pdfium.Net.Native.Pdfium.Enums;
 using Pdfium.Net.Native.Pdfium.Structs;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.Drawing;
@@ -12,9 +13,9 @@ using static System.Net.WebRequestMethods;
 
 namespace PdfiumViewer.Demo
 {
-    public class PdfRangeDocument : IPdfDocument
+    public class PdfRangeDocument
     {
-        public static PdfRangeDocument FromDocument(IPdfDocument document, int startPage, int endPage)
+        public static PdfRangeDocument FromDocument(FpdfDocument document, int startPage, int endPage)
         {
             if (document == null)
                 throw new ArgumentNullException(nameof(document));
@@ -76,7 +77,7 @@ namespace PdfiumViewer.Demo
             {
                 if (bookmark.PageIndex >= _startPage && bookmark.PageIndex <= _endPage)
                 {
-                    var resultBookmark = new PdfBookmark
+                    var resultBookmark = new FpdfBookmark
                     {
                         PageIndex = bookmark.PageIndex - _startPage,
                         Title = bookmark.Title
@@ -319,7 +320,7 @@ namespace PdfiumViewer.Demo
         {
             return _document.GetTextRectangles(page, startIndex, count);
         }
-        public IList<PdfCharacterInformation> GetCharacterInformation(int page)
+        public IList<PageCharacterInformation> GetCharacterInformation(int page)
         {
             return _document.GetCharacterInformation(page);
         }

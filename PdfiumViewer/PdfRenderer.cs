@@ -1,5 +1,6 @@
 ﻿using Pdfium.Net;
 using Pdfium.Net.Native.Pdfium.Enums;
+using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -7,7 +8,6 @@ using System.Diagnostics;
 using System.Drawing;
 using System.Text;
 using System.Windows.Forms;
-using static System.Net.Mime.MediaTypeNames;
 
 namespace PdfiumViewer
 {
@@ -22,7 +22,7 @@ namespace PdfiumViewer
         public delegate void DelePdfPoint(PdfPoint point);
         public event DelePdfPoint PdfPointhandler;
 
-        public delegate void DeleBoundedCut(int page, Rectangle rectangle);
+        public delegate void DeleBoundedCut(int page, Rectangle rectangle, Image image);
         public event DeleBoundedCut BoundedCutHandler;
 
         private static readonly Padding PageMargin = new Padding(4);
@@ -43,7 +43,7 @@ namespace PdfiumViewer
         private int _visiblePageEnd;
         private PageLink _cachedLink;
         private DragState _dragState;
-        private PdfRotation _rotation;
+        private FpdfRotation _rotation;
         private List<IPdfMarker>[] _markers;
         private PdfViewerCursorMode _cursorMode = PdfViewerCursorMode.Pan;
         private bool _isSelectingText = false;
@@ -53,8 +53,21 @@ namespace PdfiumViewer
         /// <summary>
         /// The associated PDF document.
         /// </summary>
-        public IPdfDocument Document { get; private set; }
+        public PdfDocument Document { get; private set; }
 
+        private int _cutDpiX = 0;
+
+        private int _cutDpiY = 0;
+        /// <summary>
+        /// 设置获取裁切的dpi
+        /// </summary>
+        /// <param name="cutDpiX"></param>
+        /// <param name="cutDpiY"></param>
+        public void SetCutDpi(int cutDpiX, int cutDpiY)
+        {
+            _cutDpiX = cutDpiX;
+            _cutDpiY = cutDpiY;
+        }
         /// <summary>
         /// Gets or sets a value indicating whether the user can give the focus to this control using the TAB key.
         /// </summary>
@@ -83,7 +96,7 @@ namespace PdfiumViewer
                 int top = -DisplayRectangle.Top;
                 int bottom = top + GetScrollClientArea().Height;
 
-                for (int page = 0; page < Document.PageSizes.Count; page++)
+                for (int page = 0; page < Document.Pages.Count; page++)
                 {
                     var pageCache = _pageCache[page].OuterBounds;
                     if (top - 10 < pageCache.Top)
@@ -201,11 +214,13 @@ namespace PdfiumViewer
         /// <summary>
         /// Gets or sets the current rotation of the PDF document.
         /// </summary>
-        public PdfRotation Rotation
+        public FpdfRotation Rotation
         {
             get { return _rotation; }
             set
             {
+                if (Document == null || !_pageCacheValid)
+                    return;
                 if (_rotation != value)
                 {
                     _rotation = value;
@@ -254,12 +269,12 @@ namespace PdfiumViewer
                     if (page == state.EndPage)
                         end = (state.EndIndex + 1);
                     else
-                        end = Document.CountCharacters(page);
+                        end = Document.Pages[page].CountChars();
 
                     if (page != state.StartPage)
                         sb.AppendLine();
 
-                    sb.Append(Document.GetPdfText(new PdfTextSpan(page, start, end - start)));
+                    sb.Append(Document.Pages[page].GetPdfText(new PageTextSpan(page, start, end - start)));
                 }
 
                 return sb.ToString();
@@ -304,7 +319,7 @@ namespace PdfiumViewer
             var offset = GetScrollOffset();
             location.Offset(-offset.Width, -offset.Height);
 
-            for (int page = 0; page < Document.PageSizes.Count; page++)
+            for (int page = 0; page < Document.Pages.Count; page++)
             {
                 var pageCache = _pageCache[page];
                 if (pageCache.OuterBounds.Contains(location))
@@ -315,8 +330,8 @@ namespace PdfiumViewer
                             location.X - pageCache.Bounds.X,
                             location.Y - pageCache.Bounds.Y
                         );
-                        var translated = TranslatePointToPdf(pageCache.Bounds.Size, Document.PageSizes[page], location);
-                        translated = Document.PointToPdf(page, new Point((int)translated.X, (int)translated.Y));
+                        var translated = TranslatePointToPdf(pageCache.Bounds.Size, Document.Pages[page].PageSize, location);
+                        translated = Document.Pages[page].PointToPdf(new Point((int)translated.X, (int)translated.Y));
 
                         return new PdfPoint(page, translated);
                     }
@@ -338,8 +353,8 @@ namespace PdfiumViewer
             var offset = GetScrollOffset();
             var pageBounds = _pageCache[point.Page].Bounds;
 
-            var translated = Document.PointFromPdf(point.Page, point.Location);
-            var location = TranslatePointFromPdf(pageBounds.Size, Document.PageSizes[point.Page], translated);
+            var translated = Document.Pages[point.Page].PointFromPdf(point.Location);
+            var location = TranslatePointFromPdf(pageBounds.Size, Document.Pages[point.Page].PageSize, translated);
 
             return new Point(
                 pageBounds.Left + offset.Width + location.X,
@@ -360,7 +375,7 @@ namespace PdfiumViewer
             var offset = GetScrollOffset();
             bounds.Offset(-offset.Width, -offset.Height);
 
-            for (int page = 0; page < Document.PageSizes.Count; page++)
+            for (int page = 0; page < Document.Pages.Count; page++)
             {
                 var pageCache = _pageCache[page];
                 if (pageCache.OuterBounds.Contains(bounds.Location))
@@ -376,11 +391,10 @@ namespace PdfiumViewer
                             bounds.Bottom - pageCache.Bounds.Top
                         );
 
-                        var translatedTopLeft = TranslatePointToPdf(pageCache.Bounds.Size, Document.PageSizes[page], topLeft);
-                        var translatedBottomRight = TranslatePointToPdf(pageCache.Bounds.Size, Document.PageSizes[page], bottomRight);
+                        var translatedTopLeft = TranslatePointToPdf(pageCache.Bounds.Size, Document.Pages[page].PageSize, topLeft);
+                        var translatedBottomRight = TranslatePointToPdf(pageCache.Bounds.Size, Document.Pages[page].PageSize, bottomRight);
 
-                        var translated = Document.RectangleToPdf(
-                            page,
+                        var translated = Document.Pages[page].RectangleToPdf(
                             new Rectangle(
                                 (int)translatedTopLeft.X,
                                 (int)translatedTopLeft.Y,
@@ -413,13 +427,9 @@ namespace PdfiumViewer
         {
             var offset = translateOffset ? GetScrollOffset() : Size.Empty;
             var pageBounds = _pageCache[bounds.Page].Bounds;
-            var pageSize = Document.PageSizes[bounds.Page];
+            var pageSize = Document.Pages[bounds.Page].PageSize;
 
-            var translated = Document.RectangleFromPdf(
-                bounds.Page,
-                bounds.Bounds
-            );
-
+            var translated = Document.Pages[bounds.Page].RectangleFromPdf(bounds.Bounds);
             var topLeft = TranslatePointFromPdf(pageBounds.Size, pageSize, new PointF(translated.Left, translated.Top));
             var bottomRight = TranslatePointFromPdf(pageBounds.Size, pageSize, new PointF(translated.Right, translated.Bottom));
 
@@ -435,14 +445,14 @@ namespace PdfiumViewer
         {
             switch (Rotation)
             {
-                case PdfRotation.Rotate90:
+                case FpdfRotation.Rotate90:
                     point = new Point(size.Height - point.Y, point.X);
                     size = new Size(size.Height, size.Width);
                     break;
-                case PdfRotation.Rotate180:
+                case FpdfRotation.Rotate180:
                     point = new Point(size.Width - point.X, size.Height - point.Y);
                     break;
-                case PdfRotation.Rotate270:
+                case FpdfRotation.Rotate270:
                     point = new Point(point.Y, size.Width - point.X);
                     size = new Size(size.Height, size.Width);
                     break;
@@ -458,14 +468,14 @@ namespace PdfiumViewer
         {
             switch (Rotation)
             {
-                case PdfRotation.Rotate90:
+                case FpdfRotation.Rotate90:
                     point = new PointF(pageSize.Height - point.Y, point.X);
                     pageSize = new SizeF(pageSize.Height, pageSize.Width);
                     break;
-                case PdfRotation.Rotate180:
+                case FpdfRotation.Rotate180:
                     point = new PointF(pageSize.Width - point.X, pageSize.Height - point.Y);
                     break;
-                case PdfRotation.Rotate270:
+                case FpdfRotation.Rotate270:
                     point = new PointF(point.Y, pageSize.Width - point.X);
                     pageSize = new SizeF(pageSize.Height, pageSize.Width);
                     break;
@@ -541,7 +551,7 @@ namespace PdfiumViewer
                 StartPage = 0,
                 StartIndex = 0,
                 EndPage = Document.PageCount - 1,
-                EndIndex = Document.CountCharacters(Document.PageCount - 1) - 1
+                EndIndex = Document.Pages[Document.PageCount - 1].CountChars() - 1
             };
 
             Invalidate();
@@ -558,7 +568,7 @@ namespace PdfiumViewer
         /// Load a <see cref="IPdfDocument"/> into the control.
         /// </summary>
         /// <param name="document">Document to load.</param>
-        public void Load(IPdfDocument document)
+        public void Load(PdfDocument document)
         {
             if (document == null)
                 throw new ArgumentNullException("document");
@@ -578,9 +588,9 @@ namespace PdfiumViewer
             _maxHeight = 0;
             _textSelectionState = null;
 
-            foreach (var size in Document.PageSizes)
+            foreach (var page in Document.Pages)
             {
-                var translated = TranslateSize(size);
+                var translated = TranslateSize(page.PageSize);
                 _maxWidth = Math.Max((int)translated.Width, _maxWidth);
                 _maxHeight = Math.Max((int)translated.Height, _maxHeight);
             }
@@ -642,9 +652,9 @@ namespace PdfiumViewer
 
             int offset = 0;
 
-            for (int page = 0; page < Document.PageSizes.Count; page++)
+            for (int page = 0; page < Document.Pages.Count; page++)
             {
-                var size = TranslateSize(Document.PageSizes[page]);
+                var size = TranslateSize(Document.Pages[page].PageSize);
                 int height = (int)(size.Height * _scaleFactor);
                 int fullHeight = height + ShadeBorder.Size.Vertical + PageMargin.Vertical;
                 int width = (int)(size.Width * _scaleFactor);
@@ -689,7 +699,7 @@ namespace PdfiumViewer
             if (pageCache.Links == null)
             {
                 pageCache.Links = new List<PageLink>();
-                foreach (var link in Document.GetPageLinks(page, pageCache.Bounds.Size).Links)
+                foreach (var link in Document.Pages[page].GetPageLinks().Links)
                 {
                     pageCache.Links.Add(new PageLink(link, BoundsFromPdf(new PdfRectangle(page, link.Bounds), false)));
                 }
@@ -781,7 +791,7 @@ namespace PdfiumViewer
             _visiblePageStart = -1;
             _visiblePageEnd = -1;
 
-            for (int page = 0; page < Document.PageSizes.Count; page++)
+            for (int page = 0; page < Document.Pages.Count; page++)
             {
                 var pageCache = _pageCache[page];
                 var rectangle = pageCache.OuterBounds;
@@ -857,15 +867,16 @@ namespace PdfiumViewer
                 if (page == state.EndPage)
                     end = (state.EndIndex + 1);
                 else
-                    end = Document.CountCharacters(page);
+                    end = Document.Pages[page].CountChars();
 
                 Region region = null;
-                foreach (var rectangle in Document.GetTextRectangles(page, start, end - start))
+                foreach (var rectangle in Document.Pages[page].GetTextRectangles(start, end - start))
                 {
+                    var pdfrectangle = new PdfRectangle(page, rectangle);
                     if (region == null)
-                        region = new Region(BoundsFromPdf(rectangle));
+                        region = new Region(BoundsFromPdf(pdfrectangle));
                     else
-                        region.Union(BoundsFromPdf(rectangle));
+                        region.Union(BoundsFromPdf(pdfrectangle));
                 }
 
                 if (region != null)
@@ -878,7 +889,7 @@ namespace PdfiumViewer
             var pageCache = _pageCache[page];
 
             if (pageCache.Image == null)
-                pageCache.Image = Document.Render(page, pageBounds.Width, pageBounds.Height, graphics.DpiX, graphics.DpiY, Rotation, PdfRenderFlags.Annotations);
+                pageCache.Image = Document.Pages[page].Render(pageBounds.Width, pageBounds.Height, graphics.DpiX, graphics.DpiY, Rotation, Pdfium.Net.Wrapper.RenderFlags.Annotations);
 
             graphics.DrawImageUnscaled(pageCache.Image, pageBounds.Location);
         }
@@ -888,10 +899,13 @@ namespace PdfiumViewer
         /// <returns>The document bounds.</returns>
         protected override Rectangle GetDocumentBounds()
         {
+            if (Document == null)
+                return Rectangle.Empty;
             int scaledHeight = 0;
-            for (int page = 0; page < Document.PageSizes.Count; page++)
+
+            for (int page = 0; page < Document.Pages.Count; page++)
             {
-                var size = TranslateSize(Document.PageSizes[page]);
+                var size = TranslateSize(Document.Pages[page].PageSize);
                 scaledHeight += (int)(size.Height * _scaleFactor);
             }
 
@@ -987,7 +1001,8 @@ namespace PdfiumViewer
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-
+            if (Document == null)
+                return;
             HandleMouseDownForLinks(e);
 
             if (_cursorMode == PdfViewerCursorMode.TextSelection)
@@ -1006,7 +1021,8 @@ namespace PdfiumViewer
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
-
+            if (Document == null)
+                return;
             HandleMouseUpForLinks(e);
 
             if (_cursorMode == PdfViewerCursorMode.TextSelection)
@@ -1026,6 +1042,8 @@ namespace PdfiumViewer
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            if (Document == null)
+                return;
             PdfPointhandler?.Invoke(this.PointToPdf(e.Location));
             if (_cursorMode == PdfViewerCursorMode.TextSelection)
             {
@@ -1041,7 +1059,8 @@ namespace PdfiumViewer
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
             base.OnMouseDoubleClick(e);
-
+            if (Document == null)
+                return;
             if (_cursorMode == PdfViewerCursorMode.TextSelection)
             {
                 HandleMouseDoubleClickForTextSelection(e);
@@ -1131,7 +1150,7 @@ namespace PdfiumViewer
         }
         private void HandleMouseUpDrawRedRectangle(MouseEventArgs e)
         {
-            if (this.Document.GetPdfEditable(Page))
+            if (this.Document.Pages[Page].GetPdfEditable())
             {
                 var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
                 var point2 = this.PointToPdf(e.Location);
@@ -1139,7 +1158,7 @@ namespace PdfiumViewer
                 int y = (int)point2.Location.Y;
                 int x1 = (int)point2.Location.X;
                 int y1 = (int)point1.Location.Y;
-                var txt = this.Document.GetBoundedText(Page, x, y, x1, y1);
+                var txt = this.Document.Pages[Page].GetBoundedText(x, y, x1, y1);
                 _currRect = Rectangle.Empty;
                 if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
                     return;
@@ -1149,7 +1168,7 @@ namespace PdfiumViewer
             {
                 var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
                 var point2 = this.PointToPdf(e.Location);
-                var bound = Document.PageSizes[Page];
+                //var bound = Document.Pages[Page].PageSize;
                 var x = (int)point1.Location.X;
                 var y = (int)point1.Location.Y;
                 var x1 = (int)point2.Location.X;
@@ -1165,7 +1184,7 @@ namespace PdfiumViewer
             var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
             var point2 = this.PointToPdf(e.Location);
 
-            var bound = Document.PageSizes[Page];
+            var bound = Document.Pages[Page].PageSize;
             var rect = new Rectangle();
             var x = (int)point1.Location.X;
             var y = (int)Math.Abs(bound.Height - point1.Location.Y);
@@ -1179,7 +1198,21 @@ namespace PdfiumViewer
             _currRect = Rectangle.Empty;
             if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
                 return;
-            BoundedCutHandler?.Invoke(Page, rect);
+
+            var image = Document.Render(
+                                Page,
+                                (int)Document.Pages[Page].Width,
+                                (int)Document.Pages[Page].Height,
+                               rect.X, // x of the top/left of clipping rectangle
+                               rect.Y, // y of the top/left point of clipping rectangle
+                               rect.Width, // width of clipping reactangle
+                               rect.Height, // height of clipping reactangle
+                               _cutDpiX,
+                               _cutDpiY,
+                               FpdfRotation.Rotate0, // no rotation
+                               RenderFlags.None // no render flags
+                                                   );
+            BoundedCutHandler?.Invoke(Page, rect, image);
         }
         private void DrawRedRectangle(Graphics g, int page)
         {
@@ -1198,7 +1231,7 @@ namespace PdfiumViewer
             if (!pdfLocation.IsValid)
                 return;
 
-            var characterIndex = Document.GetCharacterIndexAtPosition(pdfLocation, 4f, 4f);
+            var characterIndex = Document.GetCharacterIndexAtPosition(pdfLocation.Page, pdfLocation.Location, 4f, 4f);
 
             if (characterIndex >= 0)
             {
@@ -1251,7 +1284,7 @@ namespace PdfiumViewer
             if (!pdfLocation.IsValid)
                 return;
 
-            if (Document.GetWordAtPosition(pdfLocation, 4f, 4f, out var word))
+            if (Document.GetWordAtPosition(pdfLocation.Page, pdfLocation.Location, 4f, 4f, out var word))
             {
                 _textSelectionState = new TextSelectionState()
                 {
@@ -1284,7 +1317,7 @@ namespace PdfiumViewer
             if (!_cachedMouseState.PdfLocation.IsValid)
                 return _cachedMouseState;
 
-            _cachedMouseState.CharacterIndex = Document.GetCharacterIndexAtPosition(_cachedMouseState.PdfLocation, 4f, 4f);
+            _cachedMouseState.CharacterIndex = Document.GetCharacterIndexAtPosition(_cachedMouseState.PdfLocation.Page, _cachedMouseState.PdfLocation.Location, 4f, 4f);
 
             return _cachedMouseState;
         }
@@ -1312,7 +1345,7 @@ namespace PdfiumViewer
         /// </summary>
         public void RotateLeft()
         {
-            Rotation = (PdfRotation)(((int)Rotation + 3) % 4);
+            Rotation = (FpdfRotation)(((int)Rotation + 3) % 4);
         }
 
         /// <summary>
@@ -1320,7 +1353,7 @@ namespace PdfiumViewer
         /// </summary>
         public void RotateRight()
         {
-            Rotation = (PdfRotation)(((int)Rotation + 1) % 4);
+            Rotation = (FpdfRotation)(((int)Rotation + 1) % 4);
         }
 
         private void ResetFromRotation()
@@ -1340,8 +1373,8 @@ namespace PdfiumViewer
         {
             switch (Rotation)
             {
-                case PdfRotation.Rotate90:
-                case PdfRotation.Rotate270:
+                case FpdfRotation.Rotate90:
+                case FpdfRotation.Rotate270:
                     return new SizeF(size.Height, size.Width);
 
                 default:
@@ -1400,7 +1433,6 @@ namespace PdfiumViewer
         private void RedrawMarkers()
         {
             _markers = null;
-
             Invalidate();
         }
 
@@ -1466,7 +1498,39 @@ namespace PdfiumViewer
                 ));
             }
         }
-
+        internal void Close()
+        {
+            if (Document == null || !_pageCacheValid)
+                return;
+            Document?.Dispose(true);
+            Document = null;
+            foreach (var pageCache in _pageCache)
+            {
+                pageCache?.Links?.Clear();
+                if (pageCache.Image != null)
+                {
+                    pageCache.Image.Dispose();
+                    pageCache.Image = null;
+                }
+            }
+            foreach (var marker in _markers)
+            {
+                marker?.Clear();
+            }
+            Invalidate();
+            _dragState = null;
+            _cachedLink = null;
+            _cachedMouseState = null;
+            _textSelectionState = null;
+            _currRect = Rectangle.Empty;
+            _markers = null;
+            Markers.Clear();
+            _pageCache.Clear();
+            _pageCacheValid = false;
+            _visiblePageStart = 0;
+            _visiblePageEnd = 0;
+            _cursorMode = PdfViewerCursorMode.Pan;
+        }
         /// <summary>
         /// Releases the unmanaged resources used by the <see cref="T:System.Windows.Forms.Control"/> and its child controls and optionally releases the managed resources.
         /// </summary>
@@ -1486,15 +1550,7 @@ namespace PdfiumViewer
                     _toolTip.Dispose();
                     _toolTip = null;
                 }
-
-                foreach (var pageCache in _pageCache)
-                {
-                    if (pageCache.Image != null)
-                    {
-                        pageCache.Image.Dispose();
-                        pageCache.Image = null;
-                    }
-                }
+                Close();
 
                 _disposed = true;
             }
@@ -1512,10 +1568,10 @@ namespace PdfiumViewer
         }
         private class PageLink
         {
-            public PdfPageLink Link { get; }
+            public Pdfium.Net.Wrapper.PageLink Link { get; }
             public Rectangle Bounds { get; }
 
-            public PageLink(PdfPageLink link, Rectangle bounds)
+            public PageLink(Pdfium.Net.Wrapper.PageLink link, Rectangle bounds)
             {
                 Link = link;
                 Bounds = bounds;
@@ -1524,7 +1580,7 @@ namespace PdfiumViewer
 
         private class DragState
         {
-            public PdfPageLink Link { get; set; }
+            public Pdfium.Net.Wrapper.PageLink Link { get; set; }
             public Point Location { get; set; }
         }
 
