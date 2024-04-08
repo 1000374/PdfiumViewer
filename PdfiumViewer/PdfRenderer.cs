@@ -1,14 +1,15 @@
-﻿using Pdfium.Net;
-using Pdfium.Net.Native.Pdfium.Enums;
+﻿using Pdfium.Net.Extension;
+using Pdfium.Net.Native.Enums;
 using Pdfium.Net.Wrapper;
+using PdfiumViewer.UControl;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
+using System.Linq;
 using System.Text;
 using System.Windows.Forms;
-
 namespace PdfiumViewer
 {
     /// <summary>
@@ -22,8 +23,11 @@ namespace PdfiumViewer
         public delegate void DelePdfPoint(PdfPoint point);
         public event DelePdfPoint PdfPointhandler;
 
-        public delegate void DeleBoundedCut(int page, Rectangle rectangle, Image image);
+        public delegate void DeleBoundedCut(int page, Rectangle rectangle);
         public event DeleBoundedCut BoundedCutHandler;
+
+        public delegate void DeleBoundedEdit(int page, PdfPageobject pdfobject);
+        public event DeleBoundedEdit BoundedEditHandler;
 
         private static readonly Padding PageMargin = new Padding(4);
         private static readonly SolidBrush _textSelectionBrush = new SolidBrush(Color.FromArgb(90, Color.DodgerBlue));
@@ -41,33 +45,145 @@ namespace PdfiumViewer
         private readonly List<PageCache> _pageCache = new List<PageCache>();
         private int _visiblePageStart;
         private int _visiblePageEnd;
-        private PageLink _cachedLink;
+        private CachedLink _cachedLink;
         private DragState _dragState;
-        private FpdfRotation _rotation;
+        private PdfRotation _rotation;
         private List<IPdfMarker>[] _markers;
         private PdfViewerCursorMode _cursorMode = PdfViewerCursorMode.Pan;
         private bool _isSelectingText = false;
         private MouseState _cachedMouseState = null;
         private TextSelectionState _textSelectionState = null;
         private Rectangle _currRect = Rectangle.Empty;
+
+        private PdfOperate _pdfOperate = PdfOperate.None;
+
+        private bool _isEditMinimum = true;
+        private UcTextBox _editBox;
+        private ObjectInformation _currObjectInformation;
+        private Cursor _editCursor;
         /// <summary>
         /// The associated PDF document.
         /// </summary>
         public PdfDocument Document { get; private set; }
 
-        private int _cutDpiX = 0;
-
-        private int _cutDpiY = 0;
-        /// <summary>
-        /// 设置获取裁切的dpi
-        /// </summary>
-        /// <param name="cutDpiX"></param>
-        /// <param name="cutDpiY"></param>
-        public void SetCutDpi(int cutDpiX, int cutDpiY)
+        public PdfOperate PdfOperate
         {
-            _cutDpiX = cutDpiX;
-            _cutDpiY = cutDpiY;
+            get
+            {
+                return _pdfOperate;
+            }
+            set
+            {
+                _pdfOperate = value;
+                PanningEnabled = (value == PdfOperate.None);
+                switch (_pdfOperate)
+                {
+                    case PdfOperate.None:
+                        {
+                            _cursorMode = PdfViewerCursorMode.Pan;
+                        }
+                        break;
+                    case PdfOperate.Matching:
+                        {
+                            _cursorMode = PdfViewerCursorMode.Cross;
+                        }
+                        break;
+                    case PdfOperate.Shear:
+                        {
+                            _cursorMode = PdfViewerCursorMode.Cross;
+                        }
+                        break;
+                    case PdfOperate.Copy:
+                        {
+                            _cursorMode = PdfViewerCursorMode.TextSelection;
+                        }
+                        break;
+                    case PdfOperate.Edit:
+                        {
+                            //_isEditMinimum = true;
+                            if (_editBox == null)
+                            {
+                                _editBox = new UcTextBox();
+                                _editBox.BorderStyle = BorderStyle.FixedSingle;
+                                _editBox.BorderPositionStyle = PositionEnum.None;
+                                _editBox.Multiline = true;
+                                _editBox.ModifyTextFontHandler += ModifyTextFontHandler;
+                            }
+                            if (_editCursor == null)
+                            {
+                                using (var stream = typeof(PanningZoomingScrollControl).Assembly.GetManifestResourceStream(typeof(PanningZoomingScrollControl).Namespace + ".rotation.cur"))
+                                {
+                                    _editCursor = new Cursor(stream);
+                                }
+                            }
+                        }
+                        break;
+                }
+                RemoveShearMarker(false);
+                IniCharacterMarker();
+            }
         }
+
+        private void ModifyTextFontHandler(Color color, float size, TextBoxOperate operate)
+        {
+            switch (operate)
+            {
+                case TextBoxOperate.Enter:
+                    {
+                        RemoveEditTextBox();
+                    }
+                    break;
+                case TextBoxOperate.ChangeText:
+                    {
+                        if (_pdfOperate == PdfOperate.Edit && _editBox != null && this.Controls.Contains(_editBox))
+                        {
+                            if ((_editBox.FontColor != color || _editBox.FontSize != size) && !string.IsNullOrEmpty(_editBox.Text) && _editBox.PageObject != null && !_editBox.PageObject.IsNull)
+                            {
+                                var page = Document.Pages[_editBox.Page];
+                                var txt = _editBox.Text.Trim(new char[] { ' ', '\n', '\r', '\t' });
+                                var posX = _editBox.ObjBounds.Location.X;
+                                var posY = _editBox.ObjBounds.Location.Y + _editBox.ObjBounds.Height;
+                                if (page.RemoveObject(_editBox.PageObject))
+                                {
+                                    var pageobject = Document.PageObjCreateTextObj(Document.FontT, size);
+                                    var res = pageobject.PageObjSetFillColor(color.R, color.G, color.B, color.A);
+                                    res = pageobject.TextSetText(txt);
+                                    if (res)
+                                    {
+                                        pageobject.PageObjTransform(1, 0, 0, 1, posX, posY);
+                                        page.InsertObject(pageobject);
+                                        if (page.GenerateContent())
+                                        {
+                                            var rect = pageobject.PageObjGetBounds().ToRectangle();
+                                            var infos = Markers.Where(s => s.Page == Page && (s is CharacterMarker)).Select(s => ((CharacterMarker)s).ObjectInformation).FirstOrDefault();
+                                            var info = FindObjectInformation(_currObjectInformation.PdfPageobject, infos);
+                                            if (info != null)
+                                            {
+                                                info.PdfPageobject = pageobject;
+                                                info.ObjBounds = rect;
+                                            }
+                                            Invalidate();
+                                        }
+                                    }
+                                }
+                            }
+                            this.Controls.Remove(_editBox);
+                            _editBox.Text = "";
+                            _editBox.OrgText = "";
+                            _currObjectInformation = null;
+                            _cursorMode = PdfViewerCursorMode.None;
+                        }
+                    }
+                    break;
+            }
+
+        }
+        /// <summary>
+        ///  more FPDF_PAGEOBJ_PATH will be effect select,so default edit text and image
+        /// </summary>
+        public bool IsEditMinimum { get => _isEditMinimum; set => _isEditMinimum = value; }
+
+
         /// <summary>
         /// Gets or sets a value indicating whether the user can give the focus to this control using the TAB key.
         /// </summary>
@@ -198,23 +314,9 @@ namespace PdfiumViewer
         }
 
         /// <summary>
-        /// Gets or sets the way the viewer should respond to cursor input
-        /// </summary>
-        [DefaultValue(PdfViewerCursorMode.Pan)]
-        public PdfViewerCursorMode CursorMode
-        {
-            get { return _cursorMode; }
-            set
-            {
-                _cursorMode = value;
-                MousePanningEnabled = _cursorMode == PdfViewerCursorMode.Pan;
-            }
-        }
-
-        /// <summary>
         /// Gets or sets the current rotation of the PDF document.
         /// </summary>
-        public FpdfRotation Rotation
+        public PdfRotation Rotation
         {
             get { return _rotation; }
             set
@@ -339,7 +441,6 @@ namespace PdfiumViewer
                     break;
                 }
             }
-
             return PdfPoint.Empty;
         }
 
@@ -405,11 +506,9 @@ namespace PdfiumViewer
 
                         return new PdfRectangle(page, translated);
                     }
-
                     break;
                 }
             }
-
             return PdfRectangle.Empty;
         }
 
@@ -445,14 +544,14 @@ namespace PdfiumViewer
         {
             switch (Rotation)
             {
-                case FpdfRotation.Rotate90:
+                case PdfRotation.Rotate90:
                     point = new Point(size.Height - point.Y, point.X);
                     size = new Size(size.Height, size.Width);
                     break;
-                case FpdfRotation.Rotate180:
+                case PdfRotation.Rotate180:
                     point = new Point(size.Width - point.X, size.Height - point.Y);
                     break;
-                case FpdfRotation.Rotate270:
+                case PdfRotation.Rotate270:
                     point = new Point(point.Y, size.Width - point.X);
                     size = new Size(size.Height, size.Width);
                     break;
@@ -468,14 +567,14 @@ namespace PdfiumViewer
         {
             switch (Rotation)
             {
-                case FpdfRotation.Rotate90:
+                case PdfRotation.Rotate90:
                     point = new PointF(pageSize.Height - point.Y, point.X);
                     pageSize = new SizeF(pageSize.Height, pageSize.Width);
                     break;
-                case FpdfRotation.Rotate180:
+                case PdfRotation.Rotate180:
                     point = new PointF(pageSize.Width - point.X, pageSize.Height - point.Y);
                     break;
-                case FpdfRotation.Rotate270:
+                case PdfRotation.Rotate270:
                     point = new PointF(point.Y, pageSize.Width - point.X);
                     pageSize = new SizeF(pageSize.Height, pageSize.Width);
                     break;
@@ -517,6 +616,8 @@ namespace PdfiumViewer
             base.OnZoomChanged(e);
 
             UpdateScrollbars();
+
+            RemoveEditTextBox();
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -535,35 +636,78 @@ namespace PdfiumViewer
                     if ((e.KeyData & Keys.Modifiers) == Keys.Control)
                         CopySelection();
                     break;
+                case Keys.Delete:
+                    RemoveObject();
+                    break;
+                case Keys.Escape:
+                    if (_pdfOperate == PdfOperate.Shear)
+                    {
+                        RemoveShearMarker();
+                    }
+                    break;
             }
 
             base.OnKeyDown(e);
         }
         public void DeSelectAll()
         {
-            _textSelectionState = null;
-            Invalidate();
+            if (_pdfOperate == PdfOperate.Copy)
+            {
+                _textSelectionState = null;
+                Invalidate();
+            }
         }
         public void SelectAll()
         {
-            _textSelectionState = new TextSelectionState()
+            if (_pdfOperate == PdfOperate.Copy)
             {
-                StartPage = 0,
-                StartIndex = 0,
-                EndPage = Document.PageCount - 1,
-                EndIndex = Document.Pages[Document.PageCount - 1].CountChars() - 1
-            };
-
-            Invalidate();
+                _textSelectionState = new TextSelectionState()
+                {
+                    StartPage = 0,
+                    StartIndex = 0,
+                    EndPage = Document.PageCount - 1,
+                    EndIndex = Document.Pages[Document.PageCount - 1].CountChars() - 1
+                };
+                Invalidate();
+            }
         }
 
         public void CopySelection()
         {
-            var text = SelectedText;
-            if (text?.Length > 0)
-                Clipboard.SetText(text);
+            if (_pdfOperate == PdfOperate.Copy)
+            {
+                var text = SelectedText;
+                if (text?.Length > 0)
+                    Clipboard.SetText(text);
+            }
         }
 
+        public void RemoveObject()
+        {
+            if (_pdfOperate == PdfOperate.Edit)
+            {
+                if (_currObjectInformation != null)
+                {
+                    var info = _currObjectInformation;
+                    var obj = info.PdfPageobject;
+                    if (!obj.IsNull)
+                    {
+                        var page = Document.Pages[info.Page];
+                        if (page != null && page.RemoveObject(obj))
+                        {
+                            if (page.GenerateContent())
+                            {
+                                var markers = Markers?.Where(s => s.Page == info.Page && (s is CharacterMarker)).Select(s => ((CharacterMarker)s).ObjectInformation)?.FirstOrDefault();
+                                RemoveMarker(markers);
+                                ResetCacheImage(info.Page);
+                                _currObjectInformation = null;
+                                Invalidate();
+                            }
+                        }
+                    }
+                }
+            }
+        }
         /// <summary>
         /// Load a <see cref="IPdfDocument"/> into the control.
         /// </summary>
@@ -625,9 +769,7 @@ namespace PdfiumViewer
 
                 documentSize = GetDocumentBounds().Size;
             }
-
             _suspendPaintCount++;
-
             try
             {
                 SetDisplaySize(documentSize);
@@ -636,7 +778,6 @@ namespace PdfiumViewer
             {
                 _suspendPaintCount--;
             }
-
             RebuildPageCache();
         }
 
@@ -644,6 +785,11 @@ namespace PdfiumViewer
         {
             if (Document == null || _suspendPaintCount > 0)
                 return;
+
+            if (_pageCache.Count > 0 && _pageCache.Count != Document.PageCount)
+            {
+                DisposeCache();
+            }
 
             _pageCacheValid = true;
 
@@ -675,7 +821,7 @@ namespace PdfiumViewer
                     pageCache.Image = null;
                 }
 
-                pageCache.Links = null;
+                pageCache.CachedLinks = null;
                 pageCache.Bounds = new Rectangle(
                     thisLeftOffset + ShadeBorder.Size.Left + PageMargin.Left,
                     offset + ShadeBorder.Size.Top + PageMargin.Top,
@@ -693,19 +839,19 @@ namespace PdfiumViewer
             }
         }
 
-        private List<PageLink> GetPageLinks(int page)
+        private List<CachedLink> GetPageLinks(int page)
         {
             var pageCache = _pageCache[page];
-            if (pageCache.Links == null)
+            if (pageCache.CachedLinks == null)
             {
-                pageCache.Links = new List<PageLink>();
+                pageCache.CachedLinks = new List<CachedLink>();
                 foreach (var link in Document.Pages[page].GetPageLinks().Links)
                 {
-                    pageCache.Links.Add(new PageLink(link, BoundsFromPdf(new PdfRectangle(page, link.Bounds), false)));
+                    pageCache.CachedLinks.Add(new CachedLink(link, BoundsFromPdf(new PdfRectangle(page, link.Bounds), false)));
                 }
             }
 
-            return pageCache.Links;
+            return pageCache.CachedLinks;
         }
 
         private Rectangle GetScrollClientArea()
@@ -889,7 +1035,7 @@ namespace PdfiumViewer
             var pageCache = _pageCache[page];
 
             if (pageCache.Image == null)
-                pageCache.Image = Document.Pages[page].Render(pageBounds.Width, pageBounds.Height, graphics.DpiX, graphics.DpiY, Rotation, Pdfium.Net.Wrapper.RenderFlags.Annotations);
+                pageCache.Image = Document.Pages[page].Render(pageBounds.Width, pageBounds.Height, graphics.DpiX, graphics.DpiY, Rotation, Pdfium.Net.Wrapper.PdfRenderFlags.Annotations);
 
             graphics.DrawImageUnscaled(pageCache.Image, pageBounds.Location);
         }
@@ -949,7 +1095,7 @@ namespace PdfiumViewer
                     e.Location.X - offset.Width,
                     e.Location.Y - offset.Height
                 );
-                for (int i = 0; i < Markers.Count; i++)
+                for (int i = Markers.Count - 1; i >= 0; i--)
                 {
                     if (Markers[i] is AnnotMarker)
                         Markers.RemoveAt(i);
@@ -982,17 +1128,47 @@ namespace PdfiumViewer
                         return;
                     }
                 }
-                if (_cursorMode == PdfViewerCursorMode.Cross)
+                else if (_cursorMode == PdfViewerCursorMode.Cross)
                 {
-                    var state = GetMouseState(e.Location);
-                    if (state.CharacterIndex >= 0)
-                    {
-                        e.Cursor = Cursors.Cross;
-                        return;
-                    }
+                    e.Cursor = Cursors.Cross;
+                    return;
+                }
+                else if (_cursorMode == PdfViewerCursorMode.Move)
+                {
+                    e.Cursor = Cursors.SizeAll;
+                    return;
+                }
+                else if (_cursorMode == PdfViewerCursorMode.RightTop || _cursorMode == PdfViewerCursorMode.LeftBottom)
+                {
+                    e.Cursor = Cursors.SizeNESW;
+                    return;
+                }
+                else if (_cursorMode == PdfViewerCursorMode.Top || _cursorMode == PdfViewerCursorMode.Bottom)
+                {
+                    e.Cursor = Cursors.SizeNS;
+                    return;
+                }
+                else if (_cursorMode == PdfViewerCursorMode.LeftTop || _cursorMode == PdfViewerCursorMode.RightBottom)
+                {
+                    e.Cursor = Cursors.SizeNWSE;
+                    return;
+                }
+                else if (_cursorMode == PdfViewerCursorMode.Left || _cursorMode == PdfViewerCursorMode.Right)
+                {
+                    e.Cursor = Cursors.SizeWE;
+                    return;
+                }
+                else if (_cursorMode == PdfViewerCursorMode.Rotation)
+                {
+                    e.Cursor = _editCursor;
+                    return;
+                }
+                else if (_cursorMode == PdfViewerCursorMode.None)
+                {
+                    e.Cursor = null;
+                    return;
                 }
             }
-
             base.OnSetCursor(e);
         }
 
@@ -1001,41 +1177,51 @@ namespace PdfiumViewer
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            if (Document == null)
+            if (Document == null || e.Button != MouseButtons.Left)
                 return;
             HandleMouseDownForLinks(e);
 
-            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            if (_pdfOperate == PdfOperate.Copy)
             {
                 HandleMouseDownForTextSelection(e);
             }
-            else if (_cursorMode == PdfViewerCursorMode.Cross ||
-                _cursorMode == PdfViewerCursorMode.Cut)
+            else if (_pdfOperate == PdfOperate.Matching)
             {
                 HandleMouseDownForDrawRedMouseDown(e);
             }
+            else if (_pdfOperate == PdfOperate.Edit)
+            {
+                HandleMouseDownEditMarker(e);
+            }
+            else if (_pdfOperate == PdfOperate.Shear)
+            {
+                HandleMouseDownShear(e);
+            }
         }
-
         /// <summary>Raises the <see cref="E:System.Windows.Forms.Control.MouseUp" /> event.</summary>
         /// <param name="e">A <see cref="T:System.Windows.Forms.MouseEventArgs" /> that contains the event data. </param>
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
-            if (Document == null)
+            if (Document == null || e.Button != MouseButtons.Left)
                 return;
             HandleMouseUpForLinks(e);
 
-            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            if (_pdfOperate == PdfOperate.Copy)
             {
                 HandleMouseUpForTextSelection(e);
             }
-            else if (_cursorMode == PdfViewerCursorMode.Cross)
+            else if (_pdfOperate == PdfOperate.Matching)
             {
                 HandleMouseUpDrawRedRectangle(e);
             }
-            else if (_cursorMode == PdfViewerCursorMode.Cut)
+            else if (_pdfOperate == PdfOperate.Edit)
             {
-                HandleMouseUpCutRectangle(e);
+                HandleMouseUpEditMarker(e);
+            }
+            else if (_pdfOperate == PdfOperate.Shear)
+            {
+                HandleMouseUpShear(e);
             }
         }
 
@@ -1044,26 +1230,580 @@ namespace PdfiumViewer
             base.OnMouseMove(e);
             if (Document == null)
                 return;
-            PdfPointhandler?.Invoke(this.PointToPdf(e.Location));
-            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            var pdfPoint = this.PointToPdf(e.Location);
+            PdfPointhandler?.Invoke(pdfPoint);
+            if (_pdfOperate == PdfOperate.Copy)
             {
                 HandleMouseMoveForTextSelection(e);
             }
-            else if (_cursorMode == PdfViewerCursorMode.Cross ||
-                _cursorMode == PdfViewerCursorMode.Cut)
+            else if (_pdfOperate == PdfOperate.Matching)
             {
                 HandleMouseMoveDrawRedRectangle(e);
+            }
+            else if (_pdfOperate == PdfOperate.Edit && Markers.Count > 0)
+            {
+                HandleMouseMoveEditMarker(e);
+            }
+            else if (_pdfOperate == PdfOperate.Shear)
+            {
+                HandleMouseMoveShear(e);
             }
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
             base.OnMouseDoubleClick(e);
-            if (Document == null)
+            if (Document == null || e.Button != MouseButtons.Left)
                 return;
-            if (_cursorMode == PdfViewerCursorMode.TextSelection)
+            if (_pdfOperate == PdfOperate.Copy)
             {
                 HandleMouseDoubleClickForTextSelection(e);
+            }
+            else if (_pdfOperate == PdfOperate.Edit)
+            {
+                if (_currObjectInformation.PageObjType == PdfPageObjType.Text)
+                {
+                    var obj = _currObjectInformation.PdfPageobject;
+                    var rect = BoundsFromPdf(new PdfRectangle(_currObjectInformation.Page, _currObjectInformation.ObjBounds));
+                    var txt = obj.TextObjGetText(Document.Pages[_currObjectInformation.Page].PageText);
+                    var fontSize = obj.TextObjGetFontSize();
+                    var fontColor = Color.Black;
+                    try { fontColor = obj.PageObjGetFillColor(); }
+                    catch
+                    {
+
+                    }
+                    var pdfFont = obj.TextObjGetFont();
+                    var fontName = pdfFont.FontName;
+                    var zoom = 1.3;
+                    _editBox.Bounds = new Rectangle(rect.Location, new Size((int)(rect.Width * zoom), (int)(rect.Height * zoom)));
+                    _editBox.Text = txt;
+                    _editBox.OrgText = txt;
+                    _editBox.FontSize = fontSize;
+                    _editBox.FontColor = fontColor;
+                    _editBox.ObjBounds = _currObjectInformation.ObjBounds;
+                    _editBox.Font = new Font(fontName, (int)(fontSize * _scaleFactor / 1.5));
+                    _editBox.PageObject = obj;
+                    _editBox.Page = _currObjectInformation.Page;
+                    this.Controls.Add(_editBox);
+                    _editBox.BringToFront();
+                    _editBox.Focus();
+                }
+            }
+            else if (_pdfOperate == PdfOperate.Shear)
+            {
+                var shear = GetShearRect();
+                if (shear == null)
+                    return;
+                var rect = shear.Rectangle;
+                var bound = Document.Pages[Page].PageSize;
+                rect.Y = (int)(bound.Height - rect.Y - rect.Height);
+
+                #region
+                //var point1 = this.PointToPdf(new Point(rectMarker.X, rectMarker.Y));
+                //var point2 = this.PointToPdf(new Point(rectMarker.X + rectMarker.Width, rectMarker.Y + rectMarker.Height));
+                //var bound = Document.Pages[Page].PageSize;
+                //var rect = new Rectangle();
+                //var x = (int)point1.Location.X;
+                //var y = (int)Math.Abs(bound.Height - point1.Location.Y);
+                //var x1 = (int)point2.Location.X;
+                //var y1 = (int)Math.Abs(bound.Height - point2.Location.Y);
+                //rect.X = Math.Min(x, x1);
+                //rect.Y = Math.Min(y, y1);
+                //rect.Width = Math.Abs(x1 - x);
+                //rect.Height = Math.Abs(y1 - y);
+                //if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)
+                //    return;
+                #endregion
+
+                RemoveShearMarker();
+                BoundedCutHandler?.Invoke(Page, rect);
+            }
+        }
+
+        private void SetCurrObjectInformation(MouseEventArgs e)
+        {
+            var infos = Markers.Where(s => s.Page == Page && (s is CharacterMarker)).Select(s => ((CharacterMarker)s).ObjectInformation).FirstOrDefault();
+            var info = FindObjectInformation(e.Location, infos);
+            if (info == null)
+                return;
+
+            if (!info.IsSelect)
+            {
+                ResetObjectInformationHighlight(infos, true);
+                info.IsSelect = true;
+            }
+            _currObjectInformation = info;
+        }
+        private void RemoveEditTextBox()
+        {
+            if (_pdfOperate == PdfOperate.Edit && _editBox != null && this.Controls.Contains(_editBox))
+            {
+                if (_editBox.OrgText != _editBox.Text && _editBox.PageObject != null && !_editBox.PageObject.IsNull)
+                {
+                    var page = Document.Pages[_editBox.Page];
+                    var txt = _editBox.Text.Trim(new char[] { ' ', '\n', '\r', '\t' });
+                    if (string.IsNullOrEmpty(txt))
+                    {
+                        if (page.RemoveObject(_editBox.PageObject))
+                        {
+                            if (page.GenerateContent())
+                                Invalidate();
+                        }
+                    }
+                    else
+                    {
+                        if (_editBox.PageObject.TextSetText(txt))
+                        {
+                            if (page.GenerateContent())
+                                Invalidate();
+                        }
+                    }
+                }
+                this.Controls.Remove(_editBox);
+                _editBox.Text = "";
+                _editBox.OrgText = "";
+                _currObjectInformation = null;
+                _cursorMode = PdfViewerCursorMode.None;
+            }
+        }
+        private void HandleMouseDownEditMarker(MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+            SetCurrObjectInformation(e);
+            _currRect.X = e.X;
+            _currRect.Y = e.Y;
+            if (_currObjectInformation != null && _currObjectInformation.IsObjectValid)
+            {
+                switch (_cursorMode)
+                {
+                    case PdfViewerCursorMode.Move:
+                    case PdfViewerCursorMode.LeftTop:
+                    case PdfViewerCursorMode.Top:
+                    case PdfViewerCursorMode.RightTop:
+                    case PdfViewerCursorMode.Right:
+                    case PdfViewerCursorMode.RightBottom:
+                    case PdfViewerCursorMode.Bottom:
+                    case PdfViewerCursorMode.LeftBottom:
+                    case PdfViewerCursorMode.Left:
+                    case PdfViewerCursorMode.Rotation:
+                        {
+                            //var pdfRect = new PdfRectangle(_currObjectInformation.Page, new Rectangle((int)(_currObjectInformation.ObjMatrix.E), (int)(_currObjectInformation.ObjMatrix.F), (int)_currObjectInformation.ObjMatrix.A, (int)_currObjectInformation.ObjMatrix.D));
+                            var pdfRect = new PdfRectangle(_currObjectInformation.Page, _currObjectInformation.PdfPageobject.PageObjGetBounds().ToRectangle());
+                            var rect = BoundsFromPdf(pdfRect);
+                            //rect = this.RectangleToScreen(rect);
+                            _currObjectInformation.ObjRectangle = rect;
+                            //ControlPaint.DrawReversibleFrame(rect, Color.White, FrameStyle.Thick);
+                            Invalidate();
+
+                            break;
+                        }
+                }
+            }
+        }
+
+        private void HandleMouseMoveEditMarker(MouseEventArgs e)
+        {
+            var infos = Markers.Where(s => s.Page == Page && (s is CharacterMarker)).Select(s => ((CharacterMarker)s).ObjectInformation).FirstOrDefault();
+            ResetObjectInformationHighlight(infos);
+            var info = FindObjectInformation(e.Location, infos);
+
+            if (info != null)
+            {
+                if (e.Button != MouseButtons.Left)
+                {
+                    info.Highlight = true;
+                    if (info.PageObjType == PdfPageObjType.Text
+                        || info.PageObjType == PdfPageObjType.Path)
+                    {
+                        if (info.IsSelect)
+                        {
+                            var bounds = BoundsFromPdf(new PdfRectangle(Page, info.ObjBounds));
+                            var controlBlockIndex = CharacterHelper.GetSelectedHandle(e.Location, bounds);
+
+                            switch (controlBlockIndex)
+                            {
+                                case 0:
+                                    _cursorMode = PdfViewerCursorMode.Move;
+                                    break;
+                                case 9:
+                                    _cursorMode = PdfViewerCursorMode.Rotation;
+                                    break;
+                                default:
+                                    _cursorMode = PdfViewerCursorMode.None;
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            _cursorMode = PdfViewerCursorMode.None;
+                        }
+
+                    }
+                    else if (info.PageObjType == PdfPageObjType.Image)
+                    {
+                        if (info.IsSelect)
+                        {
+                            var bounds = BoundsFromPdf(new PdfRectangle(Page, info.ObjBounds));
+                            var controlBlockIndex = CharacterHelper.GetSelectedHandle(e.Location, bounds);
+
+                            switch (controlBlockIndex)
+                            {
+                                case 0:
+                                    _cursorMode = PdfViewerCursorMode.Move;
+                                    break;
+                                case 1:
+                                    _cursorMode = PdfViewerCursorMode.LeftTop;
+                                    break;
+                                case 2:
+                                    _cursorMode = PdfViewerCursorMode.Top;
+                                    break;
+                                case 3:
+                                    _cursorMode = PdfViewerCursorMode.RightTop;
+                                    break;
+                                case 4:
+                                    _cursorMode = PdfViewerCursorMode.Right;
+                                    break;
+                                case 5:
+                                    _cursorMode = PdfViewerCursorMode.RightBottom;
+                                    break;
+                                case 6:
+                                    _cursorMode = PdfViewerCursorMode.Bottom;
+                                    break;
+                                case 7:
+                                    _cursorMode = PdfViewerCursorMode.LeftBottom;
+                                    break;
+                                case 8:
+                                    _cursorMode = PdfViewerCursorMode.Left;
+                                    break;
+                                case 9:
+                                    _cursorMode = PdfViewerCursorMode.Rotation;
+                                    break;
+                                default:
+                                    _cursorMode = PdfViewerCursorMode.None;
+                                    break;
+                            }
+                        }
+                        else
+                        {
+                            _cursorMode = PdfViewerCursorMode.None;
+                        }
+                    }
+                    else
+                    {
+                        _cursorMode = PdfViewerCursorMode.Move;
+                    }
+                    Invalidate();
+                }
+            }
+            else
+            {
+                if (_currRect == Rectangle.Empty)
+                    _cursorMode = PdfViewerCursorMode.None;
+            }
+
+            if (_currObjectInformation != null && _currRect != Rectangle.Empty && e.Button == MouseButtons.Left)
+            {
+                var rect = _currObjectInformation.ObjRectangle;
+                var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
+                var point2 = this.PointToPdf(e.Location);
+                int x = (int)point1.Location.X;
+                int y = (int)point2.Location.Y;
+                int x1 = (int)point2.Location.X;
+                int y1 = (int)point1.Location.Y;
+                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)
+                    return;
+                var width = x1 - x;
+                var height = y1 - y;
+                switch (_cursorMode)
+                {
+                    case PdfViewerCursorMode.Move:
+                        {
+                            rect.Offset(e.X - _currRect.X, e.Y - _currRect.Y);
+                            _currObjectInformation.ObjMoveRectangle = rect;
+                            break;
+                        }
+                    case PdfViewerCursorMode.LeftTop:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X + width, rect.Y + height, rect.Width - width, rect.Height - height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.Top:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X, rect.Y + height, rect.Width, rect.Height - height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.RightTop:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X, rect.Y + height, rect.Width + width, rect.Height - height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.Right:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X, rect.Y, rect.Width + width, rect.Height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.RightBottom:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X, rect.Y, rect.Width + width, rect.Height + height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.Bottom:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X, rect.Y, rect.Width, rect.Height + height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.LeftBottom:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X + width, rect.Y, rect.Width - width, rect.Height + height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.Left:
+                        {
+                            _currObjectInformation.ObjMoveRectangle = new Rectangle(rect.X + width, rect.Y, rect.Width - width, rect.Height);
+                            break;
+                        }
+                    case PdfViewerCursorMode.Rotation:
+                        {
+                            _currObjectInformation.Direction = CharacterHelper.Direction(width, -height) - 90;
+                            _currObjectInformation.DirectionEnd = point2.Location;
+                            break;
+                        }
+                    default:
+                        break;
+                }
+                Invalidate();
+            }
+        }
+
+        private void HandleMouseUpEditMarker(MouseEventArgs e)
+        {
+            if (_currObjectInformation == null)
+                return;
+            var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
+            var point2 = this.PointToPdf(e.Location);
+            int x = (int)point1.Location.X;
+            int y = (int)point2.Location.Y;
+            int x1 = (int)point2.Location.X;
+            int y1 = (int)point1.Location.Y;
+            _currRect = Rectangle.Empty;
+            _currObjectInformation.ObjRectangle = Rectangle.Empty;
+            _currObjectInformation.ObjMoveRectangle = Rectangle.Empty;
+            _currObjectInformation.Direction = -1;
+            _currObjectInformation.DirectionEnd = PointF.Empty;
+            if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)
+                return;
+            var width = x1 - x;
+            var height = y1 - y;
+
+            if (_currObjectInformation.PageObjType == PdfPageObjType.Image
+                || _currObjectInformation.PageObjType == PdfPageObjType.Text
+                || _currObjectInformation.PageObjType == PdfPageObjType.Path)
+            {
+                if (_currObjectInformation.IsObjectValid)
+                {
+                    var obj = _currObjectInformation.PdfPageobject;
+                    var matrix = obj.PageObjGetMatrix();
+                    bool res = false;
+                    switch (_cursorMode)
+                    {
+                        case PdfViewerCursorMode.Move:
+                            {
+                                res = obj.SetMatrix(1, 0, 0, 1, width, -height);
+                                break;
+                            }
+                        case PdfViewerCursorMode.LeftTop:
+                            {
+                                res = obj.SetMatrix(1 - width / matrix.A, 0, 0, 1 - height / matrix.D, width, 0);
+                                break;
+                            }
+                        case PdfViewerCursorMode.Top:
+                            {
+                                res = obj.SetMatrix(1, 0, 0, 1 - height / matrix.D, 0, 0);
+                                break;
+                            }
+                        case PdfViewerCursorMode.RightTop:
+                            {
+                                res = obj.SetMatrix(1 + width / matrix.A, 0, 0, 1 - height / matrix.D, 0, 0);
+                                break;
+                            }
+                        case PdfViewerCursorMode.Right:
+                            {
+                                res = obj.SetMatrix(1 + width / matrix.A, 0, 0, 1, 0, 0);
+                                break;
+                            }
+                        case PdfViewerCursorMode.RightBottom:
+                            {
+                                res = obj.SetMatrix(1 + width / matrix.A, 0, 0, 1 + height / matrix.D, 0, -height);
+                                break;
+                            }
+                        case PdfViewerCursorMode.Bottom:
+                            {
+                                res = obj.SetMatrix(1, 0, 0, 1 + height / matrix.D, 0, -height);
+                                break;
+                            }
+                        case PdfViewerCursorMode.LeftBottom:
+                            {
+                                res = obj.SetMatrix(1 - width / matrix.A, 0, 0, 1 + height / matrix.D, width, -height);
+                                break;
+                            }
+                        case PdfViewerCursorMode.Left:
+                            {
+                                res = obj.SetMatrix(1 - width / matrix.A, 0, 0, 1, width, 0);
+                                break;
+                            }
+                        case PdfViewerCursorMode.Rotation:
+                            {
+                                var angle = 90 - CharacterHelper.Direction(width, -height);
+                                _currObjectInformation.DirectionEnd = point2.Location;
+                                double angleValue = (angle / 180.0d) * Math.PI;
+
+                                res = obj.SetMatrix((float)Math.Cos(angleValue), (float)-Math.Sin(angleValue), (float)Math.Sin(angleValue), (float)Math.Cos(angleValue), 0, 0);
+                                break;
+                            }
+                        default:
+                            break;
+                    }
+                    if (res)
+                    {
+                        var page = Document.Pages[_currObjectInformation.Page];
+                        if (page.GenerateContent())
+                        {
+                            _currObjectInformation.ObjBounds = _currObjectInformation.PdfPageobject.PageObjGetBounds().ToRectangle();
+                            ResetCacheImage(_currObjectInformation.Page);
+                            Invalidate();
+                            BoundedEditHandler?.Invoke(_currObjectInformation.Page, _currObjectInformation.PdfPageobject);
+                        }
+                    }
+                }
+            }
+        }
+        private void ResetObjectInformationHighlight(List<ObjectInformation> infos, bool resetIsSelect = false)
+        {
+            if (infos == null)
+                return;
+            foreach (var item in infos)
+            {
+                if (resetIsSelect)
+                {
+                    item.IsSelect = false;
+                    RemoveEditTextBox();
+                }
+                else
+                {
+                    item.Highlight = false;
+                }
+                if (item.SubObjectInformations != null)
+                {
+                    ResetObjectInformationHighlight(item.SubObjectInformations, resetIsSelect);
+                }
+            }
+        }
+
+        private void ResetCacheImage(int page)
+        {
+            var pageCache = _pageCache[page];
+
+            if (pageCache.Image != null)
+            {
+                pageCache.Image.Dispose();
+                pageCache.Image = null;
+            }
+        }
+
+        private ObjectInformation FindObjectInformation(Point point, List<ObjectInformation> infos)
+        {
+            if (infos != null)
+            {
+                var info1 = infos.Where(s => BoundsFromPdf(new PdfRectangle(s.Page, s.ObjBounds)).Contains(point)).ToList();
+                if (infos.Count > 2 && BoundsFromPdf(new PdfRectangle(infos[1].Page, infos[1].ObjBounds)).Contains(point))
+                {
+
+                }
+                if (info1 != null && info1.Count > 0)
+                {
+                    {
+                        var temp = info1.Where(s => (s.PageObjType != PdfPageObjType.UnKnown && s.PageObjType != PdfPageObjType.Shading && s.PageObjType != PdfPageObjType.Form))?.ToList();
+                        if (temp != null && temp.Count >= 1)
+                        {
+                            temp.Sort((x, y) => x.ObjBounds.Width.CompareTo(y.ObjBounds.Width));
+                            return temp.FirstOrDefault();
+                        }
+                    }
+                    var isGo = false;
+                    foreach (var item in info1)
+                    {
+                        if (!(item.PageObjType != PdfPageObjType.UnKnown && item.PageObjType != PdfPageObjType.Shading && item.PageObjType != PdfPageObjType.Form))
+                        {
+                            isGo = true;
+                            break;
+                        }
+                    }
+                    if (isGo)
+                    {
+                        foreach (var item in infos)
+                        {
+                            var info = FindObjectInformation(point, item.SubObjectInformations);
+                            if (info != null)
+                            {
+                                return info;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        var temp = info1.Where(s => (s.PageObjType != PdfPageObjType.UnKnown && s.PageObjType != PdfPageObjType.Shading && s.PageObjType != PdfPageObjType.Form))?.ToList();
+                        temp.Sort((x, y) => x.ObjBounds.Width.CompareTo(y.ObjBounds.Width));
+                        return temp.FirstOrDefault();
+                    }
+                }
+                else
+                {
+                    foreach (var item in infos)
+                    {
+                        var info = FindObjectInformation(point, item.SubObjectInformations);
+                        if (info != null)
+                        {
+                            return info;
+                        }
+                    }
+                }
+            }
+            return null;
+        }
+
+        private ObjectInformation FindObjectInformation(PdfPageobject pageobject, List<ObjectInformation> infos)
+        {
+            if (infos != null)
+            {
+                var info1 = infos.Where(s => ReferenceEquals(pageobject, s.PdfPageobject));
+                if (info1 != null)
+                    return info1.FirstOrDefault();
+                else
+                {
+                    foreach (var item in info1)
+                    {
+                        FindObjectInformation(pageobject, item.SubObjectInformations);
+                    }
+                }
+            }
+            return null;
+        }
+
+        private void RemoveMarker(List<ObjectInformation> infos)
+        {
+            for (int i = infos.Count - 1; i >= 0; i--)
+            {
+                if (ReferenceEquals(_currObjectInformation, infos[i]))
+                {
+                    infos.Remove(infos[i]);
+                    break;
+                }
+                if (infos[i].SubObjectInformations != null)
+                {
+                    RemoveMarker(infos[i].SubObjectInformations);
+                }
             }
         }
 
@@ -1126,11 +1866,6 @@ namespace PdfiumViewer
             }
         }
 
-        #region 框选文字
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="e"></param>
         private void HandleMouseDownForDrawRedMouseDown(MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left)
@@ -1138,7 +1873,6 @@ namespace PdfiumViewer
             _currRect.X = e.X;
             _currRect.Y = e.Y;
         }
-
         private void HandleMouseMoveDrawRedRectangle(MouseEventArgs e)
         {
             if (!_currRect.IsEmpty)
@@ -1150,78 +1884,231 @@ namespace PdfiumViewer
         }
         private void HandleMouseUpDrawRedRectangle(MouseEventArgs e)
         {
+            var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
+            var point2 = this.PointToPdf(e.Location);
             if (this.Document.Pages[Page].GetPdfEditable())
             {
-                var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
-                var point2 = this.PointToPdf(e.Location);
                 int x = (int)point1.Location.X;
                 int y = (int)point2.Location.Y;
                 int x1 = (int)point2.Location.X;
                 int y1 = (int)point1.Location.Y;
                 var txt = this.Document.Pages[Page].GetBoundedText(x, y, x1, y1);
                 _currRect = Rectangle.Empty;
-                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
+                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)
                     return;
                 BoundedTextHandler?.Invoke(Page, x, y, x1, y1, txt, true);
             }
             else
             {
-                var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
-                var point2 = this.PointToPdf(e.Location);
-                //var bound = Document.Pages[Page].PageSize;
                 var x = (int)point1.Location.X;
                 var y = (int)point1.Location.Y;
                 var x1 = (int)point2.Location.X;
                 var y1 = (int)point2.Location.Y;
                 _currRect = Rectangle.Empty;
-                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
+                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)
                     return;
                 BoundedTextHandler?.Invoke(Page, x, y, x1, y1, "", false);
             }
         }
-        private void HandleMouseUpCutRectangle(MouseEventArgs e)
+
+
+        private void HandleMouseDownShear(MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+            _currRect.X = e.X;
+            _currRect.Y = e.Y;
+        }
+        private void HandleMouseMoveShear(MouseEventArgs e)
+        {
+            var shear = GetShearRect();
+            if (shear == null)
+            {
+                if (e.Button == MouseButtons.Left)
+                {
+                    _currRect.Width = e.X - _currRect.X;
+                    _currRect.Height = e.Y - _currRect.Y;
+                    Invalidate();
+                }
+            }
+            else
+            {
+                if (e.Button == MouseButtons.None)
+                {
+                    var rect = BoundsFromPdf(new PdfRectangle(Page, shear.Rectangle));
+                    var controlBlockIndex = CharacterHelper.GetSelectedHandle(e.Location, rect);
+
+                    switch (controlBlockIndex)
+                    {
+                        case 0:
+                            _cursorMode = PdfViewerCursorMode.Move;
+                            break;
+                        case 1:
+                            _cursorMode = PdfViewerCursorMode.LeftTop;
+                            break;
+                        case 2:
+                            _cursorMode = PdfViewerCursorMode.Top;
+                            break;
+                        case 3:
+                            _cursorMode = PdfViewerCursorMode.RightTop;
+                            break;
+                        case 4:
+                            _cursorMode = PdfViewerCursorMode.Right;
+                            break;
+                        case 5:
+                            _cursorMode = PdfViewerCursorMode.RightBottom;
+                            break;
+                        case 6:
+                            _cursorMode = PdfViewerCursorMode.Bottom;
+                            break;
+                        case 7:
+                            _cursorMode = PdfViewerCursorMode.LeftBottom;
+                            break;
+                        case 8:
+                            _cursorMode = PdfViewerCursorMode.Left;
+                            break;
+                        case 9:
+                            _cursorMode = PdfViewerCursorMode.Rotation;
+                            break;
+                        default:
+                            _cursorMode = PdfViewerCursorMode.None;
+                            break;
+                    }
+                }
+                else if (e.Button == MouseButtons.Left)
+                {
+                    var rect = GetRectangleWithOffset(shear.Rectangle, e);
+                    if (rect == Rectangle.Empty)
+                        return;
+                    shear.MoveRectangle = rect;
+                    Invalidate();
+                }
+            }
+        }
+
+        private void HandleMouseUpShear(MouseEventArgs e)
+        {
+            if (e.Button != MouseButtons.Left)
+                return;
+
+            var shear = GetShearRect();
+            if (shear == null)
+            {
+                if (_currRect == Rectangle.Empty)
+                    return;
+                var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
+                var point2 = this.PointToPdf(e.Location);
+
+                var rect = new Rectangle();
+                int x = (int)point1.Location.X;
+                int y = (int)point2.Location.Y;
+                int x1 = (int)point2.Location.X;
+                int y1 = (int)point1.Location.Y;
+
+                rect.X = Math.Min(x, x1);
+                rect.Y = Math.Min(y, y1);
+                rect.Width = Math.Abs(x1 - x);
+                rect.Height = Math.Abs(y1 - y);
+
+                if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)
+                    return;
+                RemoveShearMarker();
+                var marker = new ShearMarker(Page, rect);
+                Markers.Add(marker);
+            }
+            else
+            {
+                var rect = GetRectangleWithOffset(shear.Rectangle, e);
+                if (rect == Rectangle.Empty)
+                    return;
+                shear.Rectangle = rect;
+                Invalidate();
+            }
+            _currRect = Rectangle.Empty;
+        }
+
+        private Rectangle GetRectangleWithOffset(Rectangle rect, MouseEventArgs e)
         {
             var point1 = this.PointToPdf(new Point(_currRect.X, _currRect.Y));
             var point2 = this.PointToPdf(e.Location);
-
-            var bound = Document.Pages[Page].PageSize;
-            var rect = new Rectangle();
-            var x = (int)point1.Location.X;
-            var y = (int)Math.Abs(bound.Height - point1.Location.Y);
-            var x1 = (int)point2.Location.X;
-            var y1 = (int)Math.Abs(bound.Height - point2.Location.Y);
-
-            rect.X = Math.Min(x, x1);
-            rect.Y = Math.Min(y, y1);
-            rect.Width = Math.Abs(x1 - x);
-            rect.Height = Math.Abs(y1 - y);
-            _currRect = Rectangle.Empty;
-            if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)//相当与未框选有效区域
-                return;
-
-            var image = Document.Render(
-                                Page,
-                                (int)Document.Pages[Page].Width,
-                                (int)Document.Pages[Page].Height,
-                               rect.X, // x of the top/left of clipping rectangle
-                               rect.Y, // y of the top/left point of clipping rectangle
-                               rect.Width, // width of clipping reactangle
-                               rect.Height, // height of clipping reactangle
-                               _cutDpiX,
-                               _cutDpiY,
-                               FpdfRotation.Rotate0, // no rotation
-                               RenderFlags.None // no render flags
-                                                   );
-            BoundedCutHandler?.Invoke(Page, rect, image);
+            int x = (int)point1.Location.X;
+            int y = (int)point2.Location.Y;
+            int x1 = (int)point2.Location.X;
+            int y1 = (int)point1.Location.Y;
+            if (Math.Abs(x1 - x) * Math.Abs(y1 - y) == 0)
+                return Rectangle.Empty;
+            var width = x1 - x;
+            var height = y1 - y;
+            switch (_cursorMode)
+            {
+                case PdfViewerCursorMode.Move:
+                    {
+                        rect.X = rect.X + width;
+                        rect.Y = rect.Y - height;
+                        break;
+                    }
+                case PdfViewerCursorMode.LeftTop:
+                    {
+                        rect.X = rect.X + width;
+                        rect.Width = rect.Width - width;
+                        rect.Height = rect.Height - height;
+                        break;
+                    }
+                case PdfViewerCursorMode.Top:
+                    {
+                        rect.Y = rect.Y - height;
+                        break;
+                    }
+                case PdfViewerCursorMode.RightTop:
+                    {
+                        rect.Width = rect.Width + width;
+                        rect.Height = rect.Height - height;
+                        break;
+                    }
+                case PdfViewerCursorMode.Right:
+                    {
+                        rect.Width = rect.Width + width;
+                        break;
+                    }
+                case PdfViewerCursorMode.RightBottom:
+                    {
+                        rect.Width = rect.Width + width;
+                        rect.Height = rect.Height + height;
+                        rect.Y = rect.Y - height;
+                        break;
+                    }
+                case PdfViewerCursorMode.Bottom:
+                    {
+                        rect.Height = rect.Height + height;
+                        rect.Y = rect.Y - height;
+                        break;
+                    }
+                case PdfViewerCursorMode.LeftBottom:
+                    {
+                        rect.Width = rect.Width - width;
+                        rect.Height = rect.Height + height;
+                        rect.X = rect.X + width;
+                        rect.Y = rect.Y - height;
+                        break;
+                    }
+                case PdfViewerCursorMode.Left:
+                    {
+                        rect.Width = rect.Width - width;
+                        rect.X = rect.X + width;
+                        break;
+                    }
+                default:
+                    break;
+            }
+            return rect;
         }
+
         private void DrawRedRectangle(Graphics g, int page)
         {
             Pen pen = new Pen(Color.Red, 1.0f);
             g.DrawRectangle(pen, _currRect);
         }
-        #endregion
 
-        #region 复制
         private void HandleMouseDownForTextSelection(MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left)
@@ -1297,7 +2184,6 @@ namespace PdfiumViewer
                 Invalidate();
             }
         }
-        #endregion
 
         private MouseState GetMouseState(Point mouseLocation)
         {
@@ -1345,7 +2231,7 @@ namespace PdfiumViewer
         /// </summary>
         public void RotateLeft()
         {
-            Rotation = (FpdfRotation)(((int)Rotation + 3) % 4);
+            Rotation = (PdfRotation)(((int)Rotation + 3) % 4);
         }
 
         /// <summary>
@@ -1353,7 +2239,7 @@ namespace PdfiumViewer
         /// </summary>
         public void RotateRight()
         {
-            Rotation = (FpdfRotation)(((int)Rotation + 1) % 4);
+            Rotation = (PdfRotation)(((int)Rotation + 1) % 4);
         }
 
         private void ResetFromRotation()
@@ -1373,15 +2259,14 @@ namespace PdfiumViewer
         {
             switch (Rotation)
             {
-                case FpdfRotation.Rotate90:
-                case FpdfRotation.Rotate270:
+                case PdfRotation.Rotate90:
+                case PdfRotation.Rotate270:
                     return new SizeF(size.Height, size.Width);
 
                 default:
                     return size;
             }
         }
-
         /// <summary>
         /// Called when the zoom level changes.
         /// </summary>
@@ -1389,45 +2274,47 @@ namespace PdfiumViewer
         /// <param name="focus">The location to focus on.</param>
         protected override void SetZoom(double zoom, Point? focus)
         {
-            Point location;
+            //Point location;
 
-            if (focus.HasValue)
-            {
-                var bounds = GetDocumentBounds();
+            //if (focus.HasValue)
+            //{
+            //    var bounds = GetDocumentBounds();
 
-                location = new Point(
-                    focus.Value.X - bounds.X,
-                    focus.Value.Y - bounds.Y
-                );
-            }
-            else
-            {
-                var bounds = _pageCacheValid
-                    ? _pageCache[Page].Bounds
-                    : GetDocumentBounds();
+            //    location = new Point(
+            //        focus.Value.X - bounds.X,
+            //        focus.Value.Y - bounds.Y
+            //    );
+            //}
+            //else
+            //{
+            //    var bounds = _pageCacheValid
+            //        ? _pageCache[Page].Bounds
+            //        : GetDocumentBounds();
 
-                location = new Point(
-                    bounds.X,
-                    bounds.Y
-                );
-            }
+            //    location = new Point(
+            //        bounds.X,
+            //        bounds.Y
+            //    );
+            //}
 
-            double oldScale = Zoom;
+            //double oldScale = Zoom;
 
+            //base.SetZoom(zoom, null);
+
+            //var newLocation = new Point(
+            //    (int)(location.X * (zoom / oldScale)),
+            //    (int)(location.Y * (zoom / oldScale))
+            //);
+
+            //SetDisplayRectLocation(
+            //    new Point(
+            //        DisplayRectangle.Left - (newLocation.X - location.X),
+            //        DisplayRectangle.Top - (newLocation.Y - location.Y)
+            //    ),
+            //    false
+            //);
             base.SetZoom(zoom, null);
-
-            var newLocation = new Point(
-                (int)(location.X * (zoom / oldScale)),
-                (int)(location.Y * (zoom / oldScale))
-            );
-
-            SetDisplayRectLocation(
-                new Point(
-                    DisplayRectangle.Left - (newLocation.X - location.X),
-                    DisplayRectangle.Top - (newLocation.Y - location.Y)
-                ),
-                false
-            );
+            OnDisplayRectangleChanged(EventArgs.Empty);
         }
 
         private void RedrawMarkers()
@@ -1467,6 +2354,105 @@ namespace PdfiumViewer
             }
         }
 
+        private void IniCharacterMarker()
+        {
+            if (Document == null || !_pageCacheValid || _pageCache == null)
+                return;
+            if (_pdfOperate == PdfOperate.Edit)
+            {
+                for (int i = 0; i < _pageCache.Count; i++)
+                {
+                    if (_pageCache[i].ObjectInformation == null)
+                    {
+                        var page = Document.Pages[i];
+
+                        if (!page.IsNull)
+                        {
+                            if (_pageCache[i].ObjectInformation == null)
+                            {
+                                var infos = new List<ObjectInformation>();
+                                var count = page.GetObjectsCount();
+                                for (int j = 0; j < count; j++)
+                                {
+                                    var obj = page.GetObject(j);
+                                    GetObject(obj, infos, i, new List<int> { j }, page.PageText);
+                                }
+                                _pageCache[i].ObjectInformation = infos;
+                                var marker = new CharacterMarker(i, infos);
+                                Markers.Add(marker);
+                            }
+                        }
+                    }
+                }
+            }
+            else
+            {
+                for (int i = 0; i < _pageCache.Count; i++)
+                {
+                    _pageCache[i].ObjectInformation?.Clear();
+                    _pageCache[i].ObjectInformation = null;
+                }
+
+                for (int i = Markers.Count - 1; i >= 0; i--)
+                {
+                    if (Markers[i] is CharacterMarker)
+                        Markers.RemoveAt(i);
+                }
+            }
+        }
+
+        private void RemoveShearMarker(bool reset = true)
+        {
+            _currRect = Rectangle.Empty;
+            for (int i = Markers.Count - 1; i >= 0; i--)
+            {
+                if (Markers[i] is ShearMarker)
+                    Markers.RemoveAt(i);
+            }
+            if (reset)
+                _cursorMode = PdfViewerCursorMode.Cross;
+        }
+
+        private ShearMarker GetShearRect()
+        {
+            var marker = Markers.FirstOrDefault(s => s is ShearMarker);
+            if (marker == null)
+                return null;
+            return (ShearMarker)marker;
+        }
+
+        private void GetObject(PdfPageobject obj, List<ObjectInformation> infos, int ipage, List<int> objIndex, PdfTextpage textpage)
+        {
+            if (!obj.IsNull)
+            {
+                var objType = obj.PageObjGetObjType();
+                var rect = obj.PageObjGetBounds().ToRectangle();
+                var cainfo = new ObjectInformation(ipage, obj, objIndex, objType, rect);
+                var sunObjCount = obj.FormObjCountObjects();
+                if (sunObjCount > 0)
+                {
+                    cainfo.SubObjectInformations = new List<ObjectInformation>();
+                    for (int sub = 0; sub < sunObjCount; sub++)
+                    {
+                        var subObj = obj.FormObjGetObject(sub);
+                        var indexs = new List<int>(objIndex);
+                        indexs.Add(sub);
+                        GetObject(subObj, cainfo.SubObjectInformations, ipage, indexs, textpage);
+                    }
+                }
+
+                if (_isEditMinimum)
+                {
+                    if (cainfo.PageObjType == PdfPageObjType.Text || cainfo.PageObjType == PdfPageObjType.Image || cainfo.SubObjectInformations?.Count > 0)
+                        infos.Add(cainfo);
+                }
+                else
+                {
+                    infos.Add(cainfo);
+                }
+            }
+        }
+
         /// <summary>
         /// Scroll the PDF bounds into view.
         /// </summary>
@@ -1502,35 +2488,42 @@ namespace PdfiumViewer
         {
             if (Document == null || !_pageCacheValid)
                 return;
-            Document?.Dispose(true);
+            Document?.Close();
             Document = null;
-            foreach (var pageCache in _pageCache)
-            {
-                pageCache?.Links?.Clear();
-                if (pageCache.Image != null)
-                {
-                    pageCache.Image.Dispose();
-                    pageCache.Image = null;
-                }
-            }
+            DisposeCache();
             foreach (var marker in _markers)
             {
                 marker?.Clear();
             }
-            Invalidate();
+            PdfOperate = PdfOperate.None;
             _dragState = null;
             _cachedLink = null;
             _cachedMouseState = null;
             _textSelectionState = null;
             _currRect = Rectangle.Empty;
-            _markers = null;
-            Markers.Clear();
-            _pageCache.Clear();
             _pageCacheValid = false;
             _visiblePageStart = 0;
             _visiblePageEnd = 0;
-            _cursorMode = PdfViewerCursorMode.Pan;
+            Markers?.Clear();
+            _editCursor?.Dispose();
+            _editCursor = null;
+            if (_editBox != null)
+            {
+                _editBox.ModifyTextFontHandler -= ModifyTextFontHandler;
+                _editBox.Dispose();
+                _editBox = null;
+            }
+
+            _currObjectInformation?.SubObjectInformations?.Clear();
+            _currObjectInformation = null;
         }
+
+        private void DisposeCache()
+        {
+            _pageCache.ForEach(s => s.Close());
+            _pageCache?.Clear();
+        }
+
         /// <summary>
         /// Releases the unmanaged resources used by the <see cref="T:System.Windows.Forms.Control"/> and its child controls and optionally releases the managed resources.
         /// </summary>
@@ -1557,70 +2550,5 @@ namespace PdfiumViewer
 
             base.Dispose(disposing);
         }
-
-        #region 内部类
-        private class PageCache
-        {
-            public List<PageLink> Links { get; set; }
-            public Rectangle Bounds { get; set; }
-            public Rectangle OuterBounds { get; set; }
-            public System.Drawing.Image Image { get; set; }
-        }
-        private class PageLink
-        {
-            public Pdfium.Net.Wrapper.PageLink Link { get; }
-            public Rectangle Bounds { get; }
-
-            public PageLink(Pdfium.Net.Wrapper.PageLink link, Rectangle bounds)
-            {
-                Link = link;
-                Bounds = bounds;
-            }
-        }
-
-        private class DragState
-        {
-            public Pdfium.Net.Wrapper.PageLink Link { get; set; }
-            public Point Location { get; set; }
-        }
-
-        private class MouseState
-        {
-            public Point MouseLocation { get; set; }
-            public PdfPoint PdfLocation { get; set; }
-            public int CharacterIndex { get; set; }
-        }
-
-        private class TextSelectionState
-        {
-            public int StartPage { get; set; }
-            public int StartIndex { get; set; }
-            public int EndPage { get; set; }
-            public int EndIndex { get; set; }
-
-            public TextSelectionState GetNormalized()
-            {
-                if (EndPage < 0 || EndIndex < 0) // Special case when only start position is known
-                    return this;
-
-                if (EndPage < StartPage ||
-                    (StartPage == EndPage && EndIndex < StartIndex))
-                {
-                    // End position is before start position.
-                    // Swap positions so start is always before end.
-
-                    return new TextSelectionState()
-                    {
-                        StartPage = EndPage,
-                        StartIndex = EndIndex,
-                        EndPage = StartPage,
-                        EndIndex = StartIndex
-                    };
-                }
-
-                return this;
-            }
-        }
-        #endregion
     }
 }

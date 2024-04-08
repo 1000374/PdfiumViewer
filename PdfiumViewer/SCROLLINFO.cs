@@ -3,9 +3,9 @@
 namespace PdfiumViewer
 {
     [StructLayout(LayoutKind.Sequential)]
-    public class SCROLLINFO
+    public class ScrollInfo
     {
-        public int cbSize = Marshal.SizeOf(typeof(SCROLLINFO));
+        public int cbSize = Marshal.SizeOf(typeof(ScrollInfo));
         public int fMask;
         public int nMin;
         public int nMax;
@@ -13,11 +13,11 @@ namespace PdfiumViewer
         public int nPos;
         public int nTrackPos;
 
-        public SCROLLINFO()
+        public ScrollInfo()
         {
         }
 
-        public SCROLLINFO(int mask, int min, int max, int page, int pos)
+        public ScrollInfo(int mask, int min, int max, int page, int pos)
         {
             fMask = mask;
             nMin = min;

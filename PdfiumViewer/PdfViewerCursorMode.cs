@@ -6,9 +6,19 @@ namespace PdfiumViewer
 {
     public enum PdfViewerCursorMode
     {
+        None = 0,
         Pan,
         TextSelection,
-        Cross,
-        Cut
+        Cross,   
+        Move,
+        LeftTop,
+        Top,
+        RightTop,
+        Right,
+        RightBottom,
+        Bottom,
+        LeftBottom,
+        Left,
+        Rotation
     }
 }

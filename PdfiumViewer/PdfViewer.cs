@@ -3,6 +3,7 @@ using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
@@ -31,7 +32,6 @@ namespace PdfiumViewer
                     if (_document != null)
                     {
                         _renderer.Load(_document);
-                        UpdateBookmarks();
                     }
                     UpdateEnabled();
                 }
@@ -120,7 +120,7 @@ namespace PdfiumViewer
         private void UpdateBookmarks()
         {
             bool visible = _showBookmarks && _document != null && _document.Bookmarks.Count > 0;
-
+        
             _container.Panel1Collapsed = !visible;
 
             if (visible)
@@ -141,9 +141,6 @@ namespace PdfiumViewer
             DefaultPrintMode = PdfPrintMode.CutMargin;
 
             InitializeComponent();
-
-            ShowToolbar = true;
-            ShowBookmarks = true;
 
             UpdateEnabled();
         }

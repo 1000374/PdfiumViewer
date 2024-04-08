@@ -13,15 +13,15 @@ namespace PdfiumViewer
     public class AnnotMarker : IPdfMarker
     {
         public int Page { get; }
-        public AnnotData Annot { get; }
-        public RectangleF Bounds { get; }
-        public double Zoom { get; }
+        private AnnotData _annot;
+        private RectangleF _bounds;
+        private double _zoom;
         public AnnotMarker(int page, AnnotData annot, RectangleF bounds, double zoom)
         {
             Page = page;
-            Annot = annot;
-            Bounds = bounds;
-            Zoom = zoom;
+            _annot = annot;
+            _bounds = bounds;
+            _zoom = zoom;
         }
 
         public void Draw(PdfRenderer renderer, Graphics graphics)
@@ -30,17 +30,17 @@ namespace PdfiumViewer
                 throw new ArgumentNullException(nameof(renderer));
             if (graphics == null)
                 throw new ArgumentNullException(nameof(graphics));
-            var author = Annot.Author;
-            var content = Annot.Content;
-            var fontSize = (Annot.FontSize > 6 ? 6f : Annot.FontSize) * Zoom;
+            var author = _annot.Author;
+            var content = _annot.Content;
+            var fontSize = (_annot.FontSize > 6 ? 6f : _annot.FontSize) * _zoom;
             Font font;
-            if (!string.IsNullOrEmpty(Annot.FontName))
-                font = new Font(Annot.FontName, (float)fontSize);
+            if (!string.IsNullOrEmpty(_annot.FontName))
+                font = new Font(_annot.FontName, (float)fontSize);
             else
             {
                 font = new Font("Microsoft YaHei", 12);
             }
-            var color = Annot.BackColor.ToArgb() == 0 ? Color.LightYellow : Annot.BackColor;
+            var color = _annot.BackColor.ToArgb() == 0 ? Color.LightYellow : _annot.BackColor;
             var cloum = 50;
             string[] authors = SplitByLenth(author, cloum);
             string[] contents = SplitByLenth(content, cloum);
@@ -64,7 +64,7 @@ namespace PdfiumViewer
                 height += size.Height;
             }
 
-            var boundsF = new RectangleF(Bounds.X, Bounds.Y + Bounds.Height - height, width, height);
+            var boundsF = new RectangleF(_bounds.X, _bounds.Y + _bounds.Height - height, width, height);
             var bounds = renderer.BoundsFromPdf(new PdfRectangle(Page, boundsF));
             bounds.Width = (int)width + 10;
             bounds.Height = (int)height + 10;

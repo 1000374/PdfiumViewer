@@ -1,4 +1,5 @@
-﻿using Pdfium.Net.Native.Pdfium;
+﻿using Pdfium.Net.Native.Constant;
+using Pdfium.Net.Native.Pdfium;
 using Pdfium.Net.Native.Structs;
 using System;
 using System.Collections.Generic;
@@ -56,13 +57,13 @@ namespace PdfiumViewer
                 CreateParams cp = base.CreateParams;
 
                 if (HScroll || _horizontalScroll.Visible)
-                    cp.Style |= NativeMethods.WS_HSCROLL;
+                    cp.Style |= Constants.WS_HSCROLL;
                 else
-                    cp.Style &= (~NativeMethods.WS_HSCROLL);
+                    cp.Style &= (~Constants.WS_HSCROLL);
                 if (VScroll || _verticalScroll.Visible)
-                    cp.Style |= NativeMethods.WS_VSCROLL;
+                    cp.Style |= Constants.WS_VSCROLL;
                 else
-                    cp.Style &= (~NativeMethods.WS_VSCROLL);
+                    cp.Style &= (~Constants.WS_VSCROLL);
 
                 return cp;
             }
@@ -101,8 +102,8 @@ namespace PdfiumViewer
             SetStyle(ControlStyles.UserMouse, true);
             SetStyle(ControlStyles.AllPaintingInWmPaint, false);
 
-            _horizontalScroll = new ScrollProperties(this, NativeMethods.SB_HORZ);
-            _verticalScroll = new ScrollProperties(this, NativeMethods.SB_VERT);
+            _horizontalScroll = new ScrollProperties(this, Constants.SB_HORZ);
+            _verticalScroll = new ScrollProperties(this, Constants.SB_VERT);
         }
 
         protected void SetDisplaySize(Size size)
@@ -188,7 +189,11 @@ namespace PdfiumViewer
             // Favor the vertical scroll bar, since it's the most
             // common use.  However, if there isn't a vertical
             // scroll and the horizontal is on, then wheel it around.
-
+            if ((ModifierKeys & Keys.Control) != 0)
+            {
+                base.OnMouseWheel(e);
+                return; //Control+mouseWheel do not move pdf,only Zoom
+            }
             if (VScroll)
             {
                 var client = ClientRectangle;
@@ -286,7 +291,7 @@ namespace PdfiumViewer
                     ref rcClip,
                     IntPtr.Zero,
                     ref rcUpdate,
-                    NativeMethods.SW_INVALIDATE | NativeMethods.SW_SCROLLCHILDREN
+                    Constants.SW_INVALIDATE | Constants.SW_SCROLLCHILDREN
                 );
             }
 
@@ -295,9 +300,9 @@ namespace PdfiumViewer
 
         private int ScrollThumbPosition(int fnBar)
         {
-            var si = new SCROLLINFO
+            var si = new ScrollInfo
             {
-                fMask = NativeMethods.SIF_TRACKPOS
+                fMask = Constants.SIF_TRACKPOS
             };
 
             Win32.GetScrollInfo(new HandleRef(this, Handle), fnBar, si);
@@ -434,36 +439,36 @@ namespace PdfiumViewer
 
             switch (Util.LOWORD(m.WParam))
             {
-                case NativeMethods.SB_THUMBPOSITION:
-                case NativeMethods.SB_THUMBTRACK:
+                case Constants.SB_THUMBPOSITION:
+                case Constants.SB_THUMBTRACK:
                     SetDisplayRectLocation(
-                        -ScrollThumbPosition(NativeMethods.SB_HORZ),
+                        -ScrollThumbPosition(Constants.SB_HORZ),
                         _displayRect.Y
                     );
                     SyncScrollbars();
                     break;
 
-                case NativeMethods.SB_LINEUP:
+                case Constants.SB_LINEUP:
                     PerformScroll(ScrollAction.LineUp, Orientation.Horizontal);
                     break;
 
-                case NativeMethods.SB_LINEDOWN:
+                case Constants.SB_LINEDOWN:
                     PerformScroll(ScrollAction.LineDown, Orientation.Horizontal);
                     break;
 
-                case NativeMethods.SB_PAGEUP:
+                case Constants.SB_PAGEUP:
                     PerformScroll(ScrollAction.PageUp, Orientation.Horizontal);
                     break;
 
-                case NativeMethods.SB_PAGEDOWN:
+                case Constants.SB_PAGEDOWN:
                     PerformScroll(ScrollAction.PageDown, Orientation.Horizontal);
                     break;
 
-                case NativeMethods.SB_LEFT:
+                case Constants.SB_LEFT:
                     PerformScroll(ScrollAction.Home, Orientation.Horizontal);
                     break;
 
-                case NativeMethods.SB_RIGHT:
+                case Constants.SB_RIGHT:
                     PerformScroll(ScrollAction.End, Orientation.Horizontal);
                     break;
             }
@@ -484,36 +489,36 @@ namespace PdfiumViewer
 
             switch (Util.LOWORD(m.WParam))
             {
-                case NativeMethods.SB_THUMBPOSITION:
-                case NativeMethods.SB_THUMBTRACK:
+                case Constants.SB_THUMBPOSITION:
+                case Constants.SB_THUMBTRACK:
                     SetDisplayRectLocation(
                         _displayRect.X,
-                        -ScrollThumbPosition(NativeMethods.SB_VERT)
+                        -ScrollThumbPosition(Constants.SB_VERT)
                     );
                     SyncScrollbars();
                     break;
 
-                case NativeMethods.SB_LINEUP:
+                case Constants.SB_LINEUP:
                     PerformScroll(ScrollAction.LineUp, Orientation.Vertical);
                     break;
 
-                case NativeMethods.SB_LINEDOWN:
+                case Constants.SB_LINEDOWN:
                     PerformScroll(ScrollAction.LineDown, Orientation.Vertical);
                     break;
 
-                case NativeMethods.SB_PAGEUP:
+                case Constants.SB_PAGEUP:
                     PerformScroll(ScrollAction.PageUp, Orientation.Vertical);
                     break;
 
-                case NativeMethods.SB_PAGEDOWN:
+                case Constants.SB_PAGEDOWN:
                     PerformScroll(ScrollAction.PageDown, Orientation.Vertical);
                     break;
 
-                case NativeMethods.SB_TOP:
+                case Constants.SB_TOP:
                     PerformScroll(ScrollAction.Home, Orientation.Vertical);
                     break;
 
-                case NativeMethods.SB_BOTTOM:
+                case Constants.SB_BOTTOM:
                     PerformScroll(ScrollAction.End, Orientation.Vertical);
                     break;
             }
@@ -633,19 +638,15 @@ namespace PdfiumViewer
         {
             switch (m.Msg)
             {
-                case NativeMethods.WM_VSCROLL:
+                case Constants.WM_VSCROLL:
                     WmVScroll(ref m);
                     break;
-
-                case NativeMethods.WM_HSCROLL:
+                case Constants.WM_HSCROLL:
                     WmHScroll(ref m);
                     break;
-
-                case NativeMethods.WM_SETCURSOR:
+                case Constants.WM_SETCURSOR:
                     WmSetCursor(ref m);
                     break;
-
-
                 default:
                     base.WndProc(ref m);
                     break;
@@ -740,10 +741,10 @@ namespace PdfiumViewer
                 if (!_parentControl.IsHandleCreated || !Visible)
                     return;
 
-                var si = new SCROLLINFO
+                var si = new ScrollInfo
                 {
-                    cbSize = Marshal.SizeOf(typeof(SCROLLINFO)),
-                    fMask = NativeMethods.SIF_ALL,
+                    cbSize = Marshal.SizeOf(typeof(ScrollInfo)),
+                    fMask = Constants.SIF_ALL,
                     nMin = 0,
                     nMax = Maximum,
                     nPage = LargeChange,

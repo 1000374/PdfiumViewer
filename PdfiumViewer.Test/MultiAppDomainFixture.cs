@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using NUnit.Framework;
+using Pdfium.Net.Wrapper;
 
 namespace PdfiumViewer.Test
 {

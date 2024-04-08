@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
-using Pdfium.Net.Native.Pdfium.Enums;
+using Pdfium.Net.Native.Enums;
 
 namespace PdfiumViewer
 {
@@ -44,6 +44,7 @@ namespace PdfiumViewer
             this._bookmarks = new PdfiumViewer.NativeTreeView();
             this._renderer = new PdfiumViewer.PdfRenderer();
             this._toolStrip.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this._container)).BeginInit();
             this._container.Panel1.SuspendLayout();
             this._container.Panel2.SuspendLayout();
             this._container.SuspendLayout();
@@ -107,6 +108,7 @@ namespace PdfiumViewer
             // _container.Panel1
             // 
             this._container.Panel1.Controls.Add(this._bookmarks);
+            this._container.Panel1Collapsed = true;
             // 
             // _container.Panel2
             // 
@@ -125,9 +127,11 @@ namespace PdfiumViewer
             // 
             this._renderer.Cursor = System.Windows.Forms.Cursors.Default;
             resources.ApplyResources(this._renderer, "_renderer");
+            this._renderer.IsEditMinimum = true;
             this._renderer.Name = "_renderer";
             this._renderer.Page = 0;
-            this._renderer.Rotation = FpdfRotation.Rotate0;
+            this._renderer.PdfOperate = PdfiumViewer.PdfOperate.None;
+            this._renderer.Rotation = Pdfium.Net.Native.Enums.PdfRotation.Rotate0;
             this._renderer.ZoomMode = PdfiumViewer.PdfViewerZoomMode.FitHeight;
             this._renderer.LinkClick += new PdfiumViewer.LinkClickEventHandler(this._renderer_LinkClick);
             // 
@@ -142,6 +146,7 @@ namespace PdfiumViewer
             this._toolStrip.PerformLayout();
             this._container.Panel1.ResumeLayout(false);
             this._container.Panel2.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this._container)).EndInit();
             this._container.ResumeLayout(false);
             this.ResumeLayout(false);
             this.PerformLayout();

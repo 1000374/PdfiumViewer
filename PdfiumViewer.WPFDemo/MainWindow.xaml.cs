@@ -106,7 +106,7 @@ namespace PdfiumViewer.WPFDemo
                 tokenSource.Cancel();
 
             if (pdfDoc != null)
-                pdfDoc.Dispose(true);
+                pdfDoc.Close();
         }
 
         private void DoSearch_Click(object sender, RoutedEventArgs e)

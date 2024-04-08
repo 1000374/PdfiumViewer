@@ -1,7 +1,7 @@
 ﻿using Pdfium.Net;
 using Pdfium.Net.Native;
+using Pdfium.Net.Native.Enums;
 using Pdfium.Net.Native.Pdfium;
-using Pdfium.Net.Native.Pdfium.Enums;
 using Pdfium.Net.Wrapper;
 using System;
 using System.Collections.Generic;
@@ -47,7 +47,7 @@ namespace PdfiumViewer
                     }
                     catch (PdfException ex)
                     {
-                        if (owner != null && ex.InnerException.Message == FpdfError.PDF_ERR_PASSWORD.ToString())
+                        if (owner != null && ex.InnerException.Message == PdfError.Password.ToString())
                         {
                             using (var form = new PasswordForm())
                             {
@@ -94,7 +94,7 @@ namespace PdfiumViewer
                     }
                     catch (PdfException ex)
                     {
-                        if (owner != null && ex.InnerException.Message == FpdfError.PDF_ERR_PASSWORD.ToString())
+                        if (owner != null && ex.InnerException.Message == PdfError.Password.ToString())
                         {
                             using (var form = new PasswordForm())
                             {
@@ -140,7 +140,7 @@ namespace PdfiumViewer
                     }
                     catch (PdfException ex)
                     {
-                        if (owner != null && ex.InnerException.Message == FpdfError.PDF_ERR_PASSWORD.ToString())
+                        if (owner != null && ex.InnerException.Message == PdfError.Password.ToString())
                         {
                             using (var form = new PasswordForm())
                             {

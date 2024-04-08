@@ -1,4 +1,5 @@
-﻿using Pdfium.Net.Native.Pdfium;
+﻿using Pdfium.Net.Native.Constant;
+using Pdfium.Net.Native.Pdfium;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -10,7 +11,7 @@ using System.Windows.Forms;
 
 namespace PdfiumViewer
 {
-    public  class PanningZoomingScrollControl : CustomScrollControl
+    public class PanningZoomingScrollControl : CustomScrollControl
     {
         public const double DefaultZoomMin = 0.1;
         public const double DefaultZoomMax = 5;
@@ -137,8 +138,6 @@ namespace PdfiumViewer
         [DefaultValue(MouseWheelMode.PanAndZoom)]
         public MouseWheelMode MouseWheelMode { get; set; }
 
-        protected bool MousePanningEnabled { get; set; } = true;
-
         /// <summary>
         /// Raises the <see cref="E:System.Windows.Forms.Control.MouseWheel"/> event.
         /// </summary>
@@ -248,7 +247,7 @@ namespace PdfiumViewer
 
         protected override void OnSetCursor(SetCursorEventArgs e)
         {
-            if (MousePanningEnabled && ShouldPan && e.HitTest == HitTest.Client)
+            if (ShouldPan && e.HitTest == HitTest.Client)
                 e.Cursor = PanCursor;
 
             base.OnSetCursor(e);
@@ -265,7 +264,7 @@ namespace PdfiumViewer
         {
             base.OnMouseDown(e);
 
-            if (!MousePanningEnabled || e.Button != MouseButtons.Left || !ShouldPan)
+            if (e.Button != MouseButtons.Left || !ShouldPan)
                 return;
 
             Capture = true;
@@ -277,7 +276,7 @@ namespace PdfiumViewer
         {
             base.OnMouseMove(e);
 
-            if (!MousePanningEnabled || !ShouldPan || !Capture)
+            if (!ShouldPan || !Capture)
                 return;
 
             var offset = new Point(e.Location.X - _dragStart.X, e.Location.Y - _dragStart.Y);
@@ -288,16 +287,14 @@ namespace PdfiumViewer
         protected override void OnMouseUp(MouseEventArgs e)
         {
             base.OnMouseUp(e);
-
-            if (MousePanningEnabled)
-                Capture = false;
+            Capture = false;
         }
 
         private class WheelFilter : IMessageFilter
         {
             public bool PreFilterMessage(ref Message m)
             {
-                if (m.Msg != NativeMethods.WM_MOUSEWHEEL)
+                if (m.Msg != Constants.WM_MOUSEWHEEL)
                     return false;
 
                 var control = Control.FromHandle(Win32.WindowFromPoint(Cursor.Position));
