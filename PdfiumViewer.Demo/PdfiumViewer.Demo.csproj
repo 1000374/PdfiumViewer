@@ -1,7 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1\build\Pdfium.Net.Free.Pdfium.Windows.props" Condition="Exists('..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1\build\Pdfium.Net.Free.Pdfium.Windows.props')" />
-  <Import Project="..\packages\Pdfium.Net.Free.3.0.1-alpha\build\Pdfium.Net.Free.props" Condition="Exists('..\packages\Pdfium.Net.Free.3.0.1-alpha\build\Pdfium.Net.Free.props')" />
+  <Import Project="..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1.1\build\Pdfium.Net.Free.Pdfium.Windows.props" Condition="Exists('..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1.1\build\Pdfium.Net.Free.Pdfium.Windows.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
     <Platform Condition=" '$(Platform)' == '' ">x86</Platform>
@@ -79,11 +78,11 @@
     <Prefer32Bit>false</Prefer32Bit>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="Pdfium.Net, Version=3.0.1.0, Culture=neutral, PublicKeyToken=a89209af80045582, processorArchitecture=MSIL">
-      <HintPath>..\packages\Pdfium.Net.Free.3.0.1-alpha\lib\net45\Pdfium.Net.dll</HintPath>
+    <Reference Include="Pdfium.Net, Version=3.0.1.1, Culture=neutral, PublicKeyToken=a89209af80045582, processorArchitecture=MSIL">
+      <HintPath>..\packages\Pdfium.Net.Free.3.0.1.1-alpha\lib\net45\Pdfium.Net.dll</HintPath>
     </Reference>
-    <Reference Include="Pdfium.Net.Extensions, Version=3.0.1.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>..\packages\Pdfium.Net.Free.Extensions.3.0.1-alpha\lib\net45\Pdfium.Net.Extensions.dll</HintPath>
+    <Reference Include="Pdfium.Net.Extensions, Version=3.0.1.1, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Pdfium.Net.Free.Extensions.3.0.1.1-alpha\lib\net45\Pdfium.Net.Extensions.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Data" />
@@ -178,8 +177,7 @@
     <PropertyGroup>
       <ErrorText>这台计算机上缺少此项目引用的 NuGet 程序包。使用“NuGet 程序包还原”可下载这些程序包。有关更多信息，请参见 http://go.microsoft.com/fwlink/?LinkID=322105。缺少的文件是 {0}。</ErrorText>
     </PropertyGroup>
-    <Error Condition="!Exists('..\packages\Pdfium.Net.Free.3.0.1-alpha\build\Pdfium.Net.Free.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Pdfium.Net.Free.3.0.1-alpha\build\Pdfium.Net.Free.props'))" />
-    <Error Condition="!Exists('..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1\build\Pdfium.Net.Free.Pdfium.Windows.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1\build\Pdfium.Net.Free.Pdfium.Windows.props'))" />
+    <Error Condition="!Exists('..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1.1\build\Pdfium.Net.Free.Pdfium.Windows.props')" Text="$([System.String]::Format('$(ErrorText)', '..\packages\Pdfium.Net.Free.Pdfium.Windows.3.0.1.1\build\Pdfium.Net.Free.Pdfium.Windows.props'))" />
   </Target>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
